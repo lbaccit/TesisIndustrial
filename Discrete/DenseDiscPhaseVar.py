@@ -1,5 +1,5 @@
 """
-DenseDistPhaseVar.py
+DenseDiscPhaseVar.py
 
 Discrete Phase-Type distribution with a dense matrix representation.
 

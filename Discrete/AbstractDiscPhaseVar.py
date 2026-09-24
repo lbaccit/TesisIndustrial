@@ -1,9 +1,33 @@
 """
-AbstractDistPhaseVar.py
+AbstractDiscPhaseVar.py
 
 Abstract class for discrete Phase-Type distributions.
 
 Migration of jphase.AbstractDiscPhaseVar from Java to Python.
+
+Theory
+------
+A DPH(alpha, A) is the number of steps until absorption of a discrete-time
+Markov chain with n transient phases and one absorbing phase, with transition
+matrix and initial distribution
+
+    P = [ A   a ]      a = 1 - A 1         (``get_mat0``)
+        [ 0   1 ]      alpha_0 = 1 - alpha 1   (``get_vec0``)
+
+The representation is valid when alpha >= 0, alpha 1 <= 1, A >= 0, A 1 <= 1
+and sp(A) < 1. The last condition is what makes every phase transient and
+I - A invertible.
+
+    pmf                P(X = 0) = alpha_0,   P(X = k) = alpha A^{k-1} a,  k >= 1
+    cdf                F(k) = 1 - alpha A^k 1
+    factorial moments  E[X(X-1)...(X-k+1)] = k! alpha (I-A)^{-k} A^{k-1} 1
+    mean               E[X] = alpha (I-A)^{-1} 1
+
+The closure operations (sum, mixture, minimum, maximum, and geometric and
+PH-distributed random sums) are documented method by method.
+
+References: Neuts (1981); Latouche & Ramaswami (1999); Bobbio, Horvath & Telek
+(2003); Telek & Heindl (2002); Perez & Riano (2006) for the jPhase design.
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -98,12 +122,15 @@ class AbstractDiscretePhaseType(ABC):
             )
 
         if not check_sub_stochastic_matrix(self._A):
+            detail = ""
+            if not is_sparse(self._A) or self.n_phases <= 1000:
+                radius = np.max(np.abs(np.linalg.eigvals(to_dense(self._A))))
+                detail = f" sp(A) = {radius:.6g}."
             raise ValueError(
                 "'A' is not a valid transient sub-stochastic matrix. "
                 "Required: A_ij >= 0, row sums <= 1, and sp(A) < 1 "
                 "(this last one guarantees that absorption happens with "
-                f"probability 1). sp(A) = "
-                f"{np.max(np.abs(np.linalg.eigvals(self._A))):.6g}."
+                "probability 1)." + detail
             )
 
 
@@ -435,18 +462,36 @@ class AbstractDiscretePhaseType(ABC):
 
         Java: ``sumGeom(double p)``.
 
-            alpha_res = alpha
-            A_res     = A + (1-p) * mat0(self) (x) alpha
+        With N ~ Geometric(p), P(N = n) = p (1-p)^{n-1}, and c = 1 / (1 -
+        (1-p) alpha_0):
 
-        Each time a copy absorbs it restarts at ``alpha`` with probability
-        (1-p) instead of stopping, which is exactly what a Geometric(p) count
-        of restarts produces.
+            alpha_res = c * alpha
+            A_res     = A + (1-p) * c * mat0(self) (x) alpha
+
+        Each time a copy absorbs, another copy starts with probability (1-p).
+        A new copy may itself be 0 (probability alpha_0), in which case it
+        is over immediately and the (1-p) decision is taken again. The factor
+        c = sum_{m>=0} ((1-p) alpha_0)^m adds up those chains of zero-length
+        copies. It is the 1-phase case of ``sum_ph``: a Geometric(p) counter
+        is DPH(beta=[1], S=[[1-p]]), and then M = (1 - alpha_0 (1-p))^{-1} = c.
+
+        Divergence from Java
+        --------------------
+        Java returns ``alpha_res = alpha`` and ``A_res = A + (1-p) a alpha``,
+        without the factor c. That is only exact when alpha_0 = 0. With
+        alpha_0 > 0 it assigns no probability to the chains of zero-length
+        copies. Example: X with alpha = [0.5, 0.2] (alpha_0 = 0.3) and p =
+        0.3 differs from the brute-force compound sum by 0.19 in the pmf. The
+        continuous ``AbstractContPhaseVar.sumGeom`` uses the same formula, and
+        its reference test (``DenseContClosureTest.testSumGeom``, with alpha_0
+        = 0.5) was computed with that formula too.
         """
         if not 0.0 < p <= 1.0:
             raise ValueError(f"'p' must be in (0, 1]; got {p}.")
         a = self.get_mat0()
-        A_res = self._A + (1.0 - p) * mult_vector(a, self._alpha)
-        return self._build_result(self._alpha.copy(), A_res)
+        c = 1.0 / (1.0 - (1.0 - p) * self.get_vec0())
+        A_res = self._A + (1.0 - p) * c * mult_vector(a, self._alpha)
+        return self._build_result(c * self._alpha, A_res)
 
     def sum_ph(self, counter: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
         """
@@ -467,21 +512,35 @@ class AbstractDiscretePhaseType(ABC):
 
             M         = (I_n2 - a0*S)^{-1}
             alpha_res = alpha (x) (M^T beta)
-            A_res     = (A (x) I_n2) + (1-a0) * (a (x) alpha) (x) (M S)
+            A_res     = (A (x) I_n2) + (a (x) alpha) (x) (M S)
 
-        Divergence from Java
-        --------------------
-        Java computes ``M`` with
-        ``ISInv.solve(Matrices.identity(this.getNumPhases()), ISInv.copy())``
-        - it solves against ``I_n1`` even though ``ISInv`` is n2 x n2. MTJ's
-        ``Matrix.solve(B, X)`` requires ``B`` to have as many rows as the
-        matrix being inverted, so this call only type-checks when n1 == n2,
-        and raises an exception otherwise. ``M`` is meant to be the full
-        inverse of the n2 x n2 matrix ``I_n2 - a0*S``, which is what is
-        implemented here (using ``I_n2`` instead of ``I_n1``). No test
-        exercises this method on either side - no tests for the discrete
-        case existed in Java at all - so the bug is latent, not something
-        that showed up in published results.
+        The state is (phase of the current copy, phase of the counter). While
+        a copy runs, only its phase moves (A (x) I). When it absorbs (a), the
+        counter takes one step (S). The next copy either starts in a phase
+        (alpha) or is 0 (a0); a 0 copy makes the counter step again at once.
+        M = sum_{m>=0} (a0 S)^m collects those chains of zero-length copies,
+        both at the start (alpha_res) and after each absorption (M S = S M).
+
+        Divergences from Java
+        ---------------------
+        1. Java computes ``M`` with
+           ``ISInv.solve(Matrices.identity(this.getNumPhases()), ...)``. It
+           solves against ``I_n1`` even though ``ISInv`` is n2 x n2, so the
+           call only works when n1 == n2 and raises an exception otherwise.
+           The continuous version, ``AbstractContPhaseVar.sumPH``, uses
+           ``Matrices.identity(n2)``, as it should. That is what is done here.
+        2. Java multiplies the second term by (1 - a0). The formula above
+           has no such factor: Java's would be correct if ``alpha`` were the
+           conditional vector alpha / (1 - a0) (the start of a copy GIVEN that
+           it is not 0), but ``getVector()`` is the unconditional alpha, so
+           the factor counts (1 - a0) twice. With a0 = 0 the two versions
+           coincide. With a0 > 0, Java's version loses probability mass:
+           example, alpha = [0.5, 0.2] (a0 = 0.3) against a 2-phase counter
+           differs from the brute-force compound sum by 0.016 in the pmf.
+           The continuous ``sumPH`` has the same factor.
+
+        No discrete test exists on the Java side, so neither problem ever
+        showed up there.
 
         Sanity check
         ------------
@@ -491,7 +550,7 @@ class AbstractDiscretePhaseType(ABC):
         leaving alpha_res = alpha and A_res = A (up to the harmless (x) I_1
         relabeling of the phases).
         """
-        n1, n2 = self.n_phases, counter.n_phases
+        n2 = counter.n_phases
         a0 = self.get_vec0()
         a = self.get_mat0()
         beta = counter._alpha
@@ -501,7 +560,7 @@ class AbstractDiscretePhaseType(ABC):
 
         alpha_res = kronecker_vectors(self._alpha, M.T @ beta)
         L1 = kronecker(self._A, eye_like(self._A, n2))
-        L2 = kronecker((1.0 - a0) * mult_vector(a, self._alpha), M @ S)
+        L2 = kronecker(mult_vector(a, self._alpha), M @ S)
         A_res = L1 + L2
         return self._build_result(alpha_res, A_res)
 

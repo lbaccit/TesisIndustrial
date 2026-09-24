@@ -1,16 +1,16 @@
 """
-test_DenseDistPhaseVar.py
+test_DenseDiscPhaseVar.py
 
-Tests for DenseDistPhaseVar.py.
+Tests for DenseDiscPhaseVar.py.
 
 This concrete class only supplies ``copy()`` and ``new_var()`` on top of the
 logic in AbstractDiscretePhaseType (already covered in
-test_AbstractDistPhaseVar.py), so the tests concentrate on those two operations
+test_AbstractDiscPhaseVar.py), so the tests concentrate on those two operations
 and on the general contract promised by the class docstring (its own two
 doctests: Geometric and Negative Binomial).
 
 Run with:
-    python3 -m unittest test_DenseDistPhaseVar -v
+    python3 -m unittest test_DenseDiscPhaseVar -v
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -116,7 +116,7 @@ class TestDoctests(unittest.TestCase):
         results = doctest.testmod(dense_module, verbose=False)
         self.assertEqual(results.failed, 0,
                          f"{results.failed} doctest(s) failed in "
-                         f"DenseDistPhaseVar.py")
+                         f"DenseDiscPhaseVar.py")
 
 
 if __name__ == "__main__":
