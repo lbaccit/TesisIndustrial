@@ -20,9 +20,9 @@ import numpy as np
 # Written twice on purpose: the relative form resolves inside the jmarkov
 # package, the absolute form resolves in a flat folder with no __init__.py.
 try:
-    from .AbstractDistPhaseVar import AbstractDiscretePhaseType
+    from .AbstractDiscPhaseVar import AbstractDiscretePhaseType
 except ImportError:  # pragma: no cover - depends on the layout, not on logic
-    from AbstractDistPhaseVar import AbstractDiscretePhaseType
+    from AbstractDiscPhaseVar import AbstractDiscretePhaseType
 
 
 class DenseDiscretePhaseType(AbstractDiscretePhaseType):

@@ -39,7 +39,7 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.testing import assert_allclose
 
-from DenseDistPhaseVar import DenseDiscretePhaseType as D
+from DenseDiscPhaseVar import DenseDiscretePhaseType as D
 
 
 # =============================================================================
