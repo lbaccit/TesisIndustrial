@@ -21,14 +21,23 @@ try:
         check_sub_stochastic_matrix,
         check_sub_stochastic_vector,
         coerce_representation,
+        concat_cols,
+        concat_quad,
+        concat_vectors,
         factorial_to_raw,
         format_representation,
         eye_like,
         is_sparse,
+        kronecker,
+        kronecker_col_vector_mx,
+        kronecker_mx_col_vector,
+        kronecker_vectors,
         mat0,
         mat_power,
+        mult_vector,
         ones_vector,
         solve_power,
+        to_dense,
         vec0,
     )
 except ImportError:
@@ -37,14 +46,23 @@ except ImportError:
         check_sub_stochastic_matrix,
         check_sub_stochastic_vector,
         coerce_representation,
+        concat_cols,
+        concat_quad,
+        concat_vectors,
         factorial_to_raw,
         format_representation,
         eye_like,
         is_sparse,
+        kronecker,
+        kronecker_col_vector_mx,
+        kronecker_mx_col_vector,
+        kronecker_vectors,
         mat0,
         mat_power,
+        mult_vector,
         ones_vector,
         solve_power,
+        to_dense,
         vec0,
     )
 
@@ -342,6 +360,271 @@ class AbstractDiscretePhaseType(ABC):
     def median(self) -> int:
         """Median, that is the quantile of order 0.5. Java: ``median()``."""
         return self.quantile(0.5)
+
+    # -------------------------------------------------------------------
+    # Closure operations
+    #
+    # Each of these builds a new DPH variable representing some operation on
+    # independent random variables (a sum, a mixture, a minimum, ...). Java
+    # exposes two overloads per operation: one that receives an already
+    # allocated ``res`` container (built through ``newVar`` and filled in
+    # place with ``setVector``/``setMatrix``), and one that allocates it
+    # itself. That pattern exists because MTJ's ``Matrix``/``Vector`` are
+    # mutable containers meant to be preallocated; NumPy arrays are plain
+    # values, so there is nothing to preallocate. Only the single-result form
+    # is implemented here; ``_build_result`` plays the role of
+    # ``newVar + setVector + setMatrix`` combined.
+    # -------------------------------------------------------------------
+
+    def _build_result(self, alpha, A) -> "AbstractDiscretePhaseType":
+        """
+        [NEW] Build a variable of the same concrete class as ``self`` from a
+        computed ``(alpha, A)`` pair.
+
+        Arithmetic that mixes a dense and a sparse operand (e.g. a Dense
+        variable combined with a Sparse one in ``min``/``max``/``sum``) can
+        land on either storage depending on the matrices involved. This
+        forces the result back to dense when ``self`` is a Dense variable;
+        the Sparse constructor already sparsifies whatever comes in, so
+        nothing extra is needed on that side.
+        """
+        if not is_sparse(self._A):
+            A = to_dense(A)
+        return type(self)(alpha, A)
+
+    def sum(self, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Sum of two independent variables: ``self + other``.
+
+        Java: ``sum(DiscPhaseVar B)``.
+
+            vec1_0    = P(self = 0)
+            alpha_res = concat(alpha, beta * vec1_0)
+            A_res     = [ A                  mat0(self) (x) beta ]
+                        [ 0                  B                   ]
+
+        Runs ``self``'s phase process first; once it absorbs (from phase i,
+        with probability ``mat0(self)_i``) it jumps straight into ``other``'s
+        initial distribution to continue running ``other``. If ``self`` was
+        already absorbed at time 0 (``vec1_0 > 0``), the sum starts running
+        ``other`` right away instead, weighted by that probability.
+
+        If either variable is identically 0 (``alpha`` entirely zero), the
+        sum is just the other variable unchanged - matching Java's
+        degenerate-case shortcut, which returns the same object rather than a
+        copy.
+        """
+        if not np.any(self._alpha):
+            return other
+        if not np.any(other._alpha):
+            return self
+
+        n1, n2 = self.n_phases, other.n_phases
+        a0 = self.get_mat0()
+        vec1_0 = self.get_vec0()
+
+        alpha_res = concat_vectors(self._alpha, other._alpha * vec1_0)
+        right_up = mult_vector(a0, other._alpha)
+        A_res = concat_quad(self._A, right_up, np.zeros((n2, n1)), other._A)
+        return self._build_result(alpha_res, A_res)
+
+    def sum_geom(self, p: float) -> "AbstractDiscretePhaseType":
+        """
+        Sum of a Geometric(p)-distributed number of iid copies of this
+        variable (the geometric variable is supported on {1, 2, 3, ...}).
+
+        Java: ``sumGeom(double p)``.
+
+            alpha_res = alpha
+            A_res     = A + (1-p) * mat0(self) (x) alpha
+
+        Each time a copy absorbs it restarts at ``alpha`` with probability
+        (1-p) instead of stopping, which is exactly what a Geometric(p) count
+        of restarts produces.
+        """
+        if not 0.0 < p <= 1.0:
+            raise ValueError(f"'p' must be in (0, 1]; got {p}.")
+        a = self.get_mat0()
+        A_res = self._A + (1.0 - p) * mult_vector(a, self._alpha)
+        return self._build_result(self._alpha.copy(), A_res)
+
+    def sum_ph(self, counter: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Sum of a Phase-type-distributed number of iid copies of this
+        variable.
+
+        Java: ``sumPH(DiscPhaseVar B)``.
+
+        ``counter`` is itself a DPH variable (beta, S) whose VALUE is the
+        number of copies of ``this`` to add: Y = X_1 + ... + X_N, with the
+        X_i iid copies of this variable and N ~ counter. This generalizes
+        ``sum_geom``, which is the special case where ``counter`` is a
+        1-phase geometric count.
+
+        Construction (n1 = self.n_phases, n2 = counter.n_phases; a0 = P(self
+        = 0); a = self's absorption vector ``get_mat0()``; beta, S =
+        counter's vector/matrix):
+
+            M         = (I_n2 - a0*S)^{-1}
+            alpha_res = alpha (x) (M^T beta)
+            A_res     = (A (x) I_n2) + (1-a0) * (a (x) alpha) (x) (M S)
+
+        Divergence from Java
+        --------------------
+        Java computes ``M`` with
+        ``ISInv.solve(Matrices.identity(this.getNumPhases()), ISInv.copy())``
+        - it solves against ``I_n1`` even though ``ISInv`` is n2 x n2. MTJ's
+        ``Matrix.solve(B, X)`` requires ``B`` to have as many rows as the
+        matrix being inverted, so this call only type-checks when n1 == n2,
+        and raises an exception otherwise. ``M`` is meant to be the full
+        inverse of the n2 x n2 matrix ``I_n2 - a0*S``, which is what is
+        implemented here (using ``I_n2`` instead of ``I_n1``). No test
+        exercises this method on either side - no tests for the discrete
+        case existed in Java at all - so the bug is latent, not something
+        that showed up in published results.
+
+        Sanity check
+        ------------
+        If ``counter`` is the degenerate DPH equal to 1 with probability 1
+        (n2 = 1, beta = [1], S = [[0]]), summing "1 copy of self" must give
+        back self: S = [[0]] makes M = [[1]] and the second term vanish,
+        leaving alpha_res = alpha and A_res = A (up to the harmless (x) I_1
+        relabeling of the phases).
+        """
+        n1, n2 = self.n_phases, counter.n_phases
+        a0 = self.get_vec0()
+        a = self.get_mat0()
+        beta = counter._alpha
+        S = to_dense(counter._A)
+
+        M = np.linalg.inv(np.eye(n2) - a0 * S)
+
+        alpha_res = kronecker_vectors(self._alpha, M.T @ beta)
+        L1 = kronecker(self._A, eye_like(self._A, n2))
+        L2 = kronecker((1.0 - a0) * mult_vector(a, self._alpha), M @ S)
+        A_res = L1 + L2
+        return self._build_result(alpha_res, A_res)
+
+    def mix(self, p: float, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Mixture: with probability p realize ``self``, otherwise ``other``.
+
+        Java: ``mix(double p, DiscPhaseVar B)``.
+
+            alpha_res = concat(p*alpha, (1-p)*beta)
+            A_res     = block_diag(A, B)
+        """
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"'p' must be in [0, 1]; got {p}.")
+        n1, n2 = self.n_phases, other.n_phases
+        alpha_res = concat_vectors(p * self._alpha, (1.0 - p) * other._alpha)
+        A_res = concat_quad(self._A, np.zeros((n1, n2)), np.zeros((n2, n1)), other._A)
+        return self._build_result(alpha_res, A_res)
+
+    def min(self, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Minimum of two independent variables: min(self, other).
+
+        Java: ``min(DiscPhaseVar B)``.
+
+            alpha_res = alpha (x) beta
+            A_res     = A (x) B
+
+        Runs both phase processes in parallel; the combined process absorbs
+        as soon as either one does, which is exactly "the first one to
+        finish".
+        """
+        alpha_res = kronecker_vectors(self._alpha, other._alpha)
+        A_res = kronecker(self._A, other._A)
+        return self._build_result(alpha_res, A_res)
+
+    def max(self, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Maximum of two independent variables: max(self, other).
+
+        Java: ``max(DiscPhaseVar B)``.
+
+        Layout of the result (n1*n2 + n1 + n2 phases, n1 = self.n_phases,
+        n2 = other.n_phases):
+
+          - the first n1*n2 phases track (self, other) running in parallel,
+            while both are still active;
+          - the next n1 phases track ``self`` alone, once ``other`` has
+            already absorbed;
+          - the last n2 phases track ``other`` alone, once ``self`` has
+            already absorbed.
+
+        The combined process only absorbs once BOTH have absorbed, which is
+        "the last one to finish".
+
+        Divergence from Java
+        --------------------
+        Java's discrete ``max`` is a line-for-line copy of
+        ``AbstractContPhaseVar.max``, including the joint "both still
+        running" block, built with ``kroneckerSum(A, B) = A(x)I + I(x)B``,
+        and the two boundary-crossing blocks, built with
+        ``kronecker(I_n1, mat0(B))`` / ``kronecker(mat0(A), I_n2)``.
+
+        That is the right construction in CONTINUOUS time: with probability
+        one, at most one of the two subprocesses moves at any given instant,
+        so rates simply add (hence the Kronecker SUM) and, when one
+        subprocess crosses into absorption, the other's phase is unchanged
+        during that same instantaneous event (hence the IDENTITY next to
+        each ``mat0``).
+
+        In DISCRETE time neither assumption holds: every phase transition
+        step advances both subprocesses simultaneously, and both may even
+        absorb in the very same step. Reusing the continuous formula
+        produces invalid rows (row sums greater than 1) as soon as both
+        variables have a positive chance of continuing - confirmed
+        numerically for two Geometric(0.5)/Geometric(0.7) variables, where
+        the joint self-loop alone came out to 0.8 while transitions to the
+        two boundary blocks added another 0.7 + 0.5, all from the same
+        state. The correct discrete-time construction replaces the
+        Kronecker sum with the Kronecker PRODUCT for the joint block (as
+        Java's own discrete ``min`` already correctly does, unlike ``max``),
+        and replaces each boundary identity with the surviving variable's
+        own sub-stochastic matrix, since it also takes a real transition in
+        the step where the other one absorbs:
+
+            joint block    = A (x) B                  (was A(+)B)
+            self-only edge = A (x) mat0(other)         (was I_n1 (x) mat0(other))
+            other-only edge= mat0(self) (x) B          (was mat0(self) (x) I_n2)
+
+        With this fix the row sums work out to
+        ``1 - mat0(self)_i * mat0(other)_j`` for every joint row - i.e. the
+        only probability mass missing from a joint row is exactly the
+        probability that both variables absorb in that same step, which is
+        precisely when ``max`` itself absorbs. No test exercises this
+        method on the Java side either, so the bug is latent there too.
+        """
+        n1, n2 = self.n_phases, other.n_phases
+        a1, a2 = self._alpha, other._alpha
+        a1_0, a2_0 = self.get_vec0(), other.get_vec0()
+        m1, m2 = self.get_mat0(), other.get_mat0()
+
+        alpha_both = kronecker_vectors(a1, a2)
+        alpha_self_only = a1 * a2_0
+        alpha_other_only = a2 * a1_0
+        alpha_res = concat_vectors(
+            alpha_both, concat_vectors(alpha_self_only, alpha_other_only)
+        )
+
+        joint_block = kronecker(self._A, other._A)
+        boundary = concat_quad(
+            self._A, np.zeros((n1, n2)), np.zeros((n2, n1)), other._A
+        )
+        transition_to_boundary = concat_cols(
+            kronecker_mx_col_vector(self._A, m2),
+            kronecker_col_vector_mx(m1, other._A),
+        )
+        A_res = concat_quad(
+            joint_block,
+            transition_to_boundary,
+            np.zeros((n1 + n2, n1 * n2)),
+            boundary,
+        )
+        return self._build_result(alpha_res, A_res)
 
     # -------------------------------------------------------------------
     # Representation

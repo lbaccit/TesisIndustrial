@@ -24,9 +24,9 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.testing import assert_allclose
 
-import SparseDistPhaseVar as sparse_module
-from SparseDistPhaseVar import SparseDiscretePhaseType as S
-from DenseDistPhaseVar import DenseDiscretePhaseType as D
+import SparseDiscPhaseVar as sparse_module
+from SparseDiscPhaseVar import SparseDiscretePhaseType as S
+from DenseDiscPhaseVar import DenseDiscretePhaseType as D
 
 
 class TestStorage(unittest.TestCase):
