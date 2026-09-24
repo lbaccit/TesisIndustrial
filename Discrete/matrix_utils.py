@@ -84,7 +84,8 @@ Operation correspondence
     np.eye(n)                        eye_like(A)   <- NOT A ** 0
     np.linalg.matrix_power(A, k)     explicit multiplication
     np.linalg.solve(M, v)            splu(M).solve(v), factorizing once
-    np.linalg.eigvals(A)             scipy.sparse.linalg.eigs(A, k=1)
+    alpha @ A^k @ v (matrix power)   k vector-matrix products (no fill-in)
+    sp(A) < 1 check                  graph reachability, same for both
     np.kron(A, B)                    scipy.sparse.kron(A, B)
     np.block([[...]])                scipy.sparse.bmat([[...]])
     scipy.linalg.expm(A)             scipy.sparse.linalg.expm(A)
@@ -97,12 +98,16 @@ explained in the docstring of the corresponding function:
    ``sum_mat_power``.
 2. ``kroneckerMxRowVector`` - wrong column stride. See
    ``kronecker_mx_row_vector``.
-3. ``checkSubGeneratorMatrix`` - never inspects column 0 and does not require
-   an exit to absorption. See ``check_sub_generator_matrix``.
+3. ``checkSubGeneratorMatrix`` - never inspects column 0, does not require
+   an exit to absorption, and accepts non-square matrices. See
+   ``check_sub_generator_matrix``.
+4. ``checkSubStochasticVector`` - never checks the sign of the first entry.
+   See ``check_sub_stochastic_vector``.
 
-All three are dead code inside jphase (nobody calls 1 and 2; 3 is used, but
-loosely), so fixing them should not break anything. Even so, it is worth
-confirming with the advisor before proposing changes to the Java side.
+1 and 2 are dead code inside jphase (nobody calls them); 3 and 4 are used,
+but the stricter versions only reject inputs that are invalid anyway, so
+fixing them should not break anything. Even so, it is worth confirming with the advisor before
+proposing changes to the Java side.
 
 There are also two deliberate behavioural differences:
 
@@ -128,6 +133,7 @@ from typing import Sequence, Tuple
 
 import numpy as np
 from scipy import sparse
+from scipy.sparse import csgraph
 from scipy.sparse import linalg as spla
 
 # Numerical tolerance. Equivalent to the `Epsilon` constant in MatrixUtils.java.
@@ -330,8 +336,12 @@ def mat_power(A, k: int, left_vec=None, right_vec=None):
     k : int
         Exponent, k >= 0. A^0 = I.
     left_vec, right_vec : array_like, optional
-        If both are given, returns the scalar ``left_vec @ A^k @ right_vec``
-        without forming the full A^k when k is small.
+        If both are given, returns the scalar ``left_vec @ A^k @ right_vec``.
+        On a sparse A it is computed as k vector-matrix products,
+        ``((left_vec A) A) ... A``, without forming A^k: the powers of a
+        sparse matrix fill in quickly (for a bidiagonal A, A^k has k+1
+        diagonals), so the vector route costs O(k nnz) instead of the time and
+        memory of an almost dense A^k.
 
     Returns
     -------
@@ -344,6 +354,11 @@ def mat_power(A, k: int, left_vec=None, right_vec=None):
             "mat_power: 'left_vec' and 'right_vec' must be given together, or "
             "neither of them."
         )
+    if is_sparse(A) and left_vec is not None:
+        v = as_vector(left_vec, "left_vec")
+        for _ in range(k):
+            v = A.T @ v
+        return float(v @ as_vector(right_vec, "right_vec"))
     if is_sparse(A):
         # ``A ** k`` is NOT used: the operator changes meaning between the two
         # scipy APIs. On spmatrix (csr_matrix) it is MATRIX power; on sparray
@@ -507,6 +522,12 @@ def check_sub_stochastic_vector(a, tol: float = EPS) -> bool:
     This is the validation of the initial vector alpha, identical in the
     continuous and the discrete case. The missing mass, 1 - sum(a), is the
     probability of starting already absorbed.
+
+    Difference from the Java version
+    --------------------------------
+    Java's sign loop starts at ``i = 1``, so a[0] is added to the sum but
+    never checked for being negative: ``a = [-5, 0.5]`` passes there (sum
+    -4.5 <= 1) and is rejected here.
     """
     a = np.asarray(a, dtype=float).ravel()
     if np.any(a < -tol):
@@ -536,6 +557,8 @@ def check_sub_generator_matrix(A, tol: float = EPS) -> bool:
        to 0, with no exit to absorption) passes validation even though it does
        not define a PH: the absorption vector a = -A*1 would be identically
        zero and the variable would never terminate.
+    c) It starts from ``res = true`` and only runs the checks when the matrix
+       is square, so a non-square matrix passes. Here it is rejected.
 
     It is worth confirming with the advisor before "fixing" the Java side, in
     case some other part of jphase relies on the lax behaviour.
@@ -711,12 +734,19 @@ def coerce_representation(alpha, A) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     [NEW] Convert and check the dimensional compatibility of (alpha, A).
 
+    The returned arrays are always copies. ``np.asarray`` and ``.tocsr()``
+    return the SAME object when the input already has the right type, so
+    without the copy a variable would share memory with the caller's arrays
+    and change whenever the caller modified them. Java's constructors copy
+    (``new DenseMatrix(matrix)``), and the jphase tests check it after every
+    operation ("Matrix changed" / "Vector changed").
+
     Returns
     -------
     (alpha, A, n_phases)
     """
-    A_arr = as_square_matrix(A, "A")
-    a_arr = as_vector(alpha, "alpha")
+    A_arr = as_square_matrix(A, "A").copy()
+    a_arr = as_vector(alpha, "alpha").copy()
     n = A_arr.shape[0]
     if a_arr.shape[0] != n:
         raise ValueError(
@@ -728,40 +758,47 @@ def coerce_representation(alpha, A) -> Tuple[np.ndarray, np.ndarray, int]:
 
 def _spectral_radius_lt_one(A, tol: float = EPS) -> bool:
     """
-    [NEW] Is sp(A) < 1? Decided with the cheapest method that works.
+    [NEW] Is sp(A) < 1, for A >= 0 with row sums <= 1? Decided exactly, from
+    the structure of A, without computing eigenvalues.
 
-    1. Sufficient condition: sp(A) <= ||A||_inf = maximum row sum. If that sum
-       is < 1, no eigenvalue needs to be computed. This covers the usual case
-       and costs O(nnz).
-    2. If some row sums to exactly 1, the spectrum has to be inspected. For
-       dense or small matrices ``np.linalg.eigvals`` is used. For large sparse
-       ones ``scipy.sparse.linalg.eigs`` is used, which requires k < n-1 and
-       therefore does not work in small dimensions.
-    3. If ``eigs`` does not converge, we fall back to power iteration on the
-       vector of ones: since A >= 0 with row sums <= 1, the sequence A^k * 1 is
-       monotone non-increasing and tends to the probability of never being
-       absorbed.
+    Call a phase "leaking" if its row sums to less than 1, that is, if it can
+    be absorbed in one step. Then
+
+        sp(A) < 1  <=>  from every phase, some leaking phase is reachable
+                        in the directed graph of A (edge i -> j iff A_ij > 0).
+
+    (<=) If every phase reaches a leaking phase within n steps, every entry
+    of A^n 1 is < 1, so ||A^n||_inf < 1 and sp(A) < 1.
+    (=>) If some phase i cannot reach a leaking phase, the set R of phases
+    reachable from i is closed and its rows sum to 1, so A restricted to R is
+    stochastic and has eigenvalue 1.
+
+    This is the matrix form of "every phase is transient" (Latouche &
+    Ramaswami, 1999). It costs one breadth-first search, O(n + nnz), which
+    matters for large sparse matrices: in a bidiagonal Erlang-type A every
+    row but the last sums to 1, and computing sp(A) numerically there (one
+    eigenvalue of multiplicity n, a single Jordan block) is both slow and
+    badly conditioned.
     """
-    row_sums = (np.asarray(A.sum(axis=1)).ravel() if is_sparse(A)
-                else np.asarray(A, dtype=float).sum(axis=1))
-    if row_sums.size and row_sums.max() < 1.0 - tol:
+    S = sparse.csr_array(A) if is_sparse(A) else sparse.csr_array(
+        np.asarray(A, dtype=float))
+    n = S.shape[0]
+    leaking = np.asarray(S.sum(axis=1)).ravel() < 1.0 - tol
+    if leaking.all():
         return True
-
-    n = A.shape[0]
-    if not is_sparse(A) or n <= 1000:
-        return bool(np.max(np.abs(np.linalg.eigvals(to_dense(A)))) < 1.0 - tol)
-
-    try:
-        lam = spla.eigs(A, k=1, which="LM", return_eigenvectors=False,
-                        maxiter=5000)
-        return bool(np.max(np.abs(lam)) < 1.0 - tol)
-    except Exception:
-        u = np.ones(n)
-        for _ in range(10_000):
-            u = A @ u
-            if u.max() < 1e-12:
-                return True
+    if not leaking.any():
         return False
+    # Reverse edges (j -> i when A_ij > 0), plus a virtual node n pointing to
+    # every leaking phase: the phases reachable from n are exactly the ones
+    # that can reach a leaking phase in the original graph.
+    S.eliminate_zeros()
+    rows, cols = S.nonzero()
+    src = np.concatenate([cols, np.full(leaking.sum(), n)])
+    dst = np.concatenate([rows, np.flatnonzero(leaking)])
+    G = sparse.csr_array((np.ones(src.size), (src, dst)), shape=(n + 1, n + 1))
+    reached = csgraph.breadth_first_order(G, n, directed=True,
+                                          return_predecessors=False)
+    return reached.size == n + 1
 
 
 def check_sub_stochastic_matrix(A, tol: float = EPS) -> bool:

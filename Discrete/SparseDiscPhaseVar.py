@@ -1,5 +1,5 @@
 """
-SparseDistPhaseVar.py
+SparseDiscPhaseVar.py
 
 Discrete Phase-Type distribution with a sparse matrix representation.
 

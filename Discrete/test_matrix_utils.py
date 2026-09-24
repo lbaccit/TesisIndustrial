@@ -26,6 +26,7 @@ Advisor: Juan Fernando Perez Bernal
 Version: 1.0
 """
 
+import time
 import unittest
 
 import numpy as np
@@ -414,6 +415,60 @@ class TestValidations(unittest.TestCase):
         self.assertTrue(mu.check_sub_stochastic_matrix(D3))
         recurrent_matrix = np.array([[1.0, 0.0], [0.5, 0.4]])
         self.assertFalse(mu.check_sub_stochastic_matrix(recurrent_matrix))
+
+    def test_check_sub_stochastic_vector_checks_first_entry(self):
+        # Java's sign loop starts at i = 1 and accepts [-5, 0.5].
+        self.assertFalse(mu.check_sub_stochastic_vector(np.array([-5.0, 0.5])))
+
+    def test_check_sub_generator_matrix_rejects_non_square(self):
+        # Java only validates square matrices and returns true otherwise.
+        self.assertFalse(mu.check_sub_generator_matrix(np.array([[-1.0, 0.5, 0.2]])))
+
+
+class TestSpectralRadiusCriterion(unittest.TestCase):
+    """
+    sp(A) < 1 is decided by graph reachability (every phase reaches a phase
+    whose row sums to less than 1), not by eigenvalues. Checked here against
+    np.linalg.eigvals on random sub-stochastic matrices.
+    """
+
+    def test_matches_eigenvalues_on_random_matrices(self):
+        rng = np.random.default_rng(12345)
+        for _ in range(500):
+            n = int(rng.integers(1, 7))
+            A = rng.random((n, n)) * (rng.random((n, n)) < 0.5)
+            A = A / np.maximum(A.sum(axis=1, keepdims=True), 1e-300)
+            leak = rng.random(n) < 0.3
+            A[leak] *= rng.uniform(0.3, 0.99, (int(leak.sum()), 1))
+            expected = np.max(np.abs(np.linalg.eigvals(A))) < 1 - 1e-9
+            self.assertEqual(mu._spectral_radius_lt_one(A), expected)
+            self.assertEqual(mu._spectral_radius_lt_one(sp.csr_array(A)), expected)
+
+    def test_closed_class_without_exit_is_rejected(self):
+        # Phases 0 and 1 swap forever; only phase 2 leaks, and it is unreachable.
+        A = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.5]])
+        self.assertFalse(mu._spectral_radius_lt_one(A))
+
+    def test_large_sparse_bidiagonal_is_fast(self):
+        # Every row but the last sums to exactly 1, so no row-sum shortcut
+        # applies; an eigenvalue solver struggles here (one Jordan block).
+        n = 10_000
+        A = sp.diags_array([np.full(n, 0.5), np.full(n - 1, 0.5)], offsets=[0, 1],
+                           format="csr")
+        start = time.perf_counter()
+        self.assertTrue(mu.check_sub_stochastic_matrix(A))
+        self.assertLess(time.perf_counter() - start, 1.0)
+
+
+class TestMatPowerVectorRoute(unittest.TestCase):
+    def test_sparse_with_vectors_matches_dense(self):
+        A = np.array([[0.5, 0.3, 0.0], [0.1, 0.4, 0.2], [0.0, 0.2, 0.6]])
+        left, right = np.array([0.2, 0.5, 0.3]), np.array([0.3, 0.1, 0.4])
+        for k in (0, 1, 7, 40):
+            expected = mu.mat_power(A, k, left, right)
+            for api in (sp.csr_array, sp.csr_matrix):
+                self.assertAlmostEqual(mu.mat_power(api(A), k, left, right),
+                                       expected, places=12)
 
 
 class TestVec0Mat0(unittest.TestCase):

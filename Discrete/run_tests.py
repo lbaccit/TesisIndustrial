@@ -11,7 +11,25 @@ Equivalent to:
     python3 -m unittest discover -p "test_*.py" -v
 
 Exit code is 0 when everything passes and 1 otherwise, so it can be wired into
-CI later on.
+CI later on. This is the counterpart of jMarkov's ``test/jphase/AllTests.java``.
+
+Correspondence with jMarkov's jphase tests
+------------------------------------------
+    Java (continuous only)          Python (discrete)
+    -----------------------------   ------------------------------
+    DenseContProbTest.java          test_DenseDiscProb.py
+    DenseContMomentTest.java        test_DenseDiscMoment.py
+    DenseContClosureTest.java       test_DenseDiscClosure.py
+    SparseContProbTest.java         test_SparseDiscProb.py
+    SparseContMomentTest.java       test_SparseDiscMoment.py
+    SparseContClosureTest.java      test_SparseDiscClosure.py
+    (none)                          test_AbstractDiscPhaseVar.py
+    (none)                          test_DenseDiscPhaseVar.py
+    (none)                          test_SparseDiscPhaseVar.py
+    (none)                          test_matrix_utils.py
+
+The fixtures are in ``discrete_fixtures.py`` and the expected values in
+``reference_values.py``, which ``generate_reference_values.py`` regenerates.
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal

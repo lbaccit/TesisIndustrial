@@ -1,18 +1,20 @@
 """
-test_AbstractDistPhaseVar.py
+test_AbstractDiscPhaseVar.py
 
-Tests for AbstractDistPhaseVar.py, using DenseDiscretePhaseType as the concrete
+Tests for AbstractDiscPhaseVar.py, using DenseDiscretePhaseType as the concrete
 implementation (the abstract class cannot be instantiated on its own).
 
-About the reference values
---------------------------
-jMarkov (Java) has NO tests for the discrete Phase-Type variable:
-DenseContProbTest.java and DenseContMomentTest.java exist for the continuous
-case, but there is no DenseDiscProbTest.java or DenseDiscMomentTest.java in the
-repository (`jMarkov/test/jphase/`). So for the discrete case there are no
-official Java "gold" values to copy here.
+Where this file fits
+--------------------
+jMarkov (Java) has NO tests for the discrete Phase-Type variable, only the
+continuous DenseCont{Prob,Moment,Closure}Test.java and their Sparse twins.
+The files test_{Dense,Sparse}Disc{Prob,Moment,Closure}.py mirror those six
+Java tests one to one (and check the discrete fixtures against Java's own
+continuous reference values through uniformization).
 
-Instead, the verification rests on:
+This file covers what those Java tests do not: closed-form distributions,
+internal consistency between methods, constructor validation, equality and
+hashing. It rests on:
 
   1. Cases with a known closed-form solution in the Phase-Type literature
      (Neuts 1981; Latouche & Ramaswami 1999):
@@ -25,7 +27,7 @@ Instead, the verification rests on:
      exactly.
 
 Run with:
-    python3 -m unittest test_AbstractDistPhaseVar -v
+    python3 -m unittest test_AbstractDiscPhaseVar -v
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -40,7 +42,6 @@ import scipy.sparse as sp
 from numpy.testing import assert_allclose
 
 from DenseDiscPhaseVar import DenseDiscretePhaseType as D
-from SparseDiscPhaseVar import SparseDiscretePhaseType as S
 
 
 # =============================================================================
@@ -124,7 +125,7 @@ class TestGeometricAnalytic(unittest.TestCase):
 
     def test_quantile_does_not_reproduce_java_bug(self):
         """
-        Documented in AbstractDistPhaseVar.py: Java's quantil() applies
+        Documented in AbstractDiscPhaseVar.py: Java's quantil() applies
         Newton-Raphson and silently returns 0.0 when it fails to converge
         within 100 iterations. For Geometric(0.5) that happens at p=0.9, 0.95
         and 0.99, where the correct values are 4, 5 and 7 respectively.
@@ -251,6 +252,28 @@ class TestConstructorValidation(unittest.TestCase):
         X = D(np.array([0.5, 0.3]), np.array([[0.5, 0.2], [0.1, 0.6]]))
         self.assertGreater(X.get_vec0(), 0.0)
 
+    def test_constructor_copies_its_inputs(self):
+        # Java copies (new DenseMatrix(matrix)); modifying the caller's arrays
+        # afterwards must not change the variable.
+        alpha = np.array([1.0, 0.0])
+        A = np.array([[0.5, 0.2], [0.0, 0.5]])
+        X = D(alpha, A)
+        mean = X.mean()
+        alpha[0], A[0, 0] = 0.1, 0.9
+        self.assertEqual(X.mean(), mean)
+
+        A_sparse = sp.csr_array(np.array([[0.5, 0.2], [0.0, 0.5]]))
+        Y = D(np.array([1.0, 0.0]), A_sparse)
+        mean = Y.mean()
+        A_sparse.data[0] = 0.9
+        self.assertEqual(Y.mean(), mean)
+
+    def test_rejects_recurrent_sparse_matrix_with_value_error(self):
+        # The error message used to call np.linalg.eigvals on the sparse
+        # matrix and crash with LinAlgError instead.
+        with self.assertRaises(ValueError):
+            D(np.array([1.0, 0.0]), sp.csr_array(np.array([[1.0, 0.0], [0.5, 0.4]])))
+
 
 class TestEqualityAndHash(unittest.TestCase):
     def test_copy_is_equal_but_independent(self):
@@ -302,233 +325,6 @@ class TestDenseVsSparseEndToEnd(unittest.TestCase):
         for api in (sp.csr_matrix, sp.csr_array):
             sparse_var = D(self.dense.alpha.copy(), api(self.dense.A))
             assert_allclose(self.dense.get_mat0(), sparse_var.get_mat0(), atol=1e-10)
-
-
-class TestMinMax(unittest.TestCase):
-    """
-    min/max validated against direct probability identities, independent of
-    the PH machinery:
-
-        P(min(X,Y) <= k) = 1 - (1-F_X(k))(1-F_Y(k))
-        P(max(X,Y) <= k) = F_X(k) * F_Y(k)
-
-    These hold for ANY two independent random variables, so they do not rely
-    on X, Y being phase-type at all - a strong, independent check.
-    """
-
-    def setUp(self):
-        self.X = geometric(0.5)
-        self.Y = geometric(0.7)
-        alphaZ = np.array([1.0, 0.0])
-        AZ = np.array([[0.6, 0.4], [0.0, 0.6]])
-        self.Z = D(alphaZ, AZ)  # negative_binomial(2, 0.4), multi-phase
-
-    def test_min_matches_survival_formula(self):
-        mn = self.X.min(self.Y)
-        for k in range(15):
-            expected = 1 - (1 - self.X.cdf(k)) * (1 - self.Y.cdf(k))
-            self.assertAlmostEqual(mn.cdf(k), expected, places=8)
-
-    def test_max_matches_product_formula(self):
-        mx = self.X.max(self.Y)
-        for k in range(15):
-            expected = self.X.cdf(k) * self.Y.cdf(k)
-            self.assertAlmostEqual(mx.cdf(k), expected, places=8)
-
-    def test_min_max_multiphase(self):
-        mn = self.X.min(self.Z)
-        mx = self.X.max(self.Z)
-        for k in range(20):
-            fx, fz = self.X.cdf(k), self.Z.cdf(k)
-            self.assertAlmostEqual(mn.cdf(k), 1 - (1 - fx) * (1 - fz), places=8)
-            self.assertAlmostEqual(mx.cdf(k), fx * fz, places=8)
-
-    def test_phase_counts(self):
-        n1, n2 = self.X.n_phases, self.Z.n_phases
-        self.assertEqual(self.X.min(self.Z).n_phases, n1 * n2)
-        self.assertEqual(self.X.max(self.Z).n_phases, n1 * n2 + n1 + n2)
-
-    def test_max_row_sums_are_valid_after_java_bug_fix(self):
-        """
-        Regression test for the bug documented in ``max``'s docstring: Java's
-        discrete ``max`` reuses the continuous-time formula (Kronecker SUM
-        for the joint block, identity next to each ``mat0`` at the
-        boundary), which produces invalid rows (sum > 1) whenever both
-        variables have a real chance of continuing. This checks the fixed
-        construction directly, without going through cdf().
-        """
-        mx = self.X.max(self.Y)
-        A = mx.A
-        row_sums = A.sum(axis=1)
-        self.assertTrue(np.all(row_sums <= 1.0 + 1e-9))
-        # Joint state (0,0): missing mass must equal mat0(X)[0]*mat0(Y)[0].
-        m1, m2 = self.X.get_mat0(), self.Y.get_mat0()
-        self.assertAlmostEqual(1 - row_sums[0], m1[0] * m2[0], places=10)
-
-
-class TestSum(unittest.TestCase):
-    """
-    sum() validated against discrete convolution: if Z = X + Y with X, Y
-    independent, pmf_Z = pmf_X * pmf_Y (convolution), regardless of whether
-    the summands are phase-type.
-    """
-
-    def setUp(self):
-        self.X = geometric(0.5)
-        self.Y = negative_binomial(2, 0.4)
-
-    def test_sum_matches_convolution(self):
-        s = self.X.sum(self.Y)
-        pmf_x = self.X.pmf_range(30)
-        pmf_y = self.Y.pmf_range(30)
-        conv = np.convolve(pmf_x, pmf_y)[:31]
-        assert_allclose(s.pmf_range(30), conv, atol=1e-8)
-
-    def test_sum_mean_is_additive(self):
-        s = self.X.sum(self.Y)
-        self.assertAlmostEqual(s.mean(), self.X.mean() + self.Y.mean(), places=8)
-
-    def test_sum_phase_count(self):
-        s = self.X.sum(self.Y)
-        self.assertEqual(s.n_phases, self.X.n_phases + self.Y.n_phases)
-
-    def test_degenerate_zero_variable_is_identity(self):
-        # alpha entirely zero => P(X=0)=1 identically; Java returns the other
-        # operand unchanged rather than computing anything.
-        zero_var = D(np.array([0.0]), np.array([[0.5]]))
-        self.assertIs(zero_var.sum(self.X), self.X)
-        self.assertIs(self.X.sum(zero_var), self.X)
-
-
-class TestSumGeom(unittest.TestCase):
-    """sum_geom(p): sum of a Geometric(p)-count of iid copies of X."""
-
-    def setUp(self):
-        self.X = geometric(0.5)
-        self.p = 0.4
-
-    def test_mean_matches_wald_identity(self):
-        # E[sum of N iid X_i] = E[N]*E[X], Wald's identity; E[N] = 1/p here.
-        res = self.X.sum_geom(self.p)
-        self.assertAlmostEqual(res.mean(), (1 / self.p) * self.X.mean(), places=8)
-
-    def test_matches_brute_force_compound_pmf(self):
-        res = self.X.sum_geom(self.p)
-        pmf_x = self.X.pmf_range(40)
-        kmax = 40
-        brute = np.zeros(kmax + 1)
-        conv_n = np.array([1.0])
-        pN = self.p
-        for n in range(1, 200):
-            conv_n = np.convolve(conv_n, pmf_x)[:kmax + 1]
-            pN_n = self.p * (1 - self.p) ** (n - 1)
-            brute[:len(conv_n)] += pN_n * conv_n[:kmax + 1]
-            if pN_n < 1e-14:
-                break
-        assert_allclose(res.pmf_range(kmax), brute, atol=1e-6)
-
-
-class TestSumPH(unittest.TestCase):
-    """
-    sum_ph(counter): sum of a DPH-distributed number of iid copies of X.
-    Validated two ways: against sum_geom (its 1-phase special case) and
-    against a brute-force compound sum built from counter's own pmf.
-    """
-
-    def setUp(self):
-        self.X = geometric(0.5)
-
-    def test_reduces_to_self_when_counter_is_deterministic_one(self):
-        counter_one = D(np.array([1.0]), np.array([[0.0]]))
-        res = self.X.sum_ph(counter_one)
-        assert_allclose(res.alpha, self.X.alpha, atol=1e-10)
-        assert_allclose(res.A, self.X.A, atol=1e-10)
-
-    def test_matches_sum_geom_for_one_phase_counter(self):
-        p = 0.4
-        counter = D(np.array([1.0]), np.array([[1 - p]]))  # Geometric(p) count
-        via_sum_ph = self.X.sum_ph(counter)
-        via_sum_geom = self.X.sum_geom(p)
-        assert_allclose(via_sum_ph.pmf_range(30), via_sum_geom.pmf_range(30),
-                         atol=1e-8)
-        self.assertAlmostEqual(via_sum_ph.mean(), via_sum_geom.mean(), places=8)
-
-    def test_matches_brute_force_compound_sum_multiphase_counter(self):
-        counter = D(np.array([0.6, 0.4]), np.array([[0.1, 0.2], [0.0, 0.3]]))
-        res = self.X.sum_ph(counter)
-
-        kmax = 25
-        pN = counter.pmf_range(40)
-        brute = np.zeros(kmax + 1)
-        brute[0] += pN[0]
-        conv_n = np.array([1.0])
-        pmf_x = self.X.pmf_range(kmax)
-        for n in range(1, len(pN)):
-            conv_n = np.convolve(conv_n, pmf_x)[:kmax + 1]
-            brute[:len(conv_n)] += pN[n] * conv_n[:kmax + 1]
-        assert_allclose(res.pmf_range(kmax), brute, atol=1e-6)
-
-
-class TestMix(unittest.TestCase):
-    """mix(p, other): the resulting pmf must be the literal p-weighted mix."""
-
-    def setUp(self):
-        self.X = geometric(0.5)
-        self.Y = negative_binomial(2, 0.4)
-        self.p = 0.35
-
-    def test_pmf_is_linear_combination(self):
-        m = self.X.mix(self.p, self.Y)
-        expected = self.p * self.X.pmf_range(20) + (1 - self.p) * self.Y.pmf_range(20)
-        assert_allclose(m.pmf_range(20), expected, atol=1e-10)
-
-    def test_mean_is_linear_combination(self):
-        m = self.X.mix(self.p, self.Y)
-        expected = self.p * self.X.mean() + (1 - self.p) * self.Y.mean()
-        self.assertAlmostEqual(m.mean(), expected, places=8)
-
-    def test_phase_count(self):
-        m = self.X.mix(self.p, self.Y)
-        self.assertEqual(m.n_phases, self.X.n_phases + self.Y.n_phases)
-
-    def test_rejects_p_out_of_range(self):
-        with self.assertRaises(ValueError):
-            self.X.mix(1.5, self.Y)
-
-
-class TestClosureOperationsDenseSparse(unittest.TestCase):
-    """
-    Closure operations must give numerically identical distributions
-    regardless of whether the operands are stored dense or sparse, and must
-    return an object whose OWN storage matches ``self`` (not the operand) -
-    e.g. a Dense variable combined with a Sparse one still returns Dense.
-    """
-
-    def setUp(self):
-        self.Xd = geometric(0.5)
-        self.Yd = geometric(0.7)
-        self.Ys = S(np.array([1.0]), sp.csr_array([[0.3]]))  # same as Yd
-
-    def test_min_matches_across_storage(self):
-        mn_dense = self.Xd.min(self.Yd)
-        mn_mixed = self.Xd.min(self.Ys)
-        assert_allclose(mn_dense.A, mn_mixed.A, atol=1e-10)
-        assert_allclose(mn_dense.alpha, mn_mixed.alpha, atol=1e-10)
-
-    def test_result_storage_follows_self_not_other(self):
-        self.assertFalse(sp.issparse(self.Xd.min(self.Ys).A))
-        self.assertTrue(sp.issparse(self.Ys.min(self.Xd).A))
-
-    def test_sum_and_max_match_across_storage(self):
-        for op in ("sum", "max", "mix"):
-            if op == "mix":
-                a = getattr(self.Xd, op)(0.5, self.Yd)
-                b = getattr(self.Xd, op)(0.5, self.Ys)
-            else:
-                a = getattr(self.Xd, op)(self.Yd)
-                b = getattr(self.Xd, op)(self.Ys)
-            assert_allclose(a.pmf_range(15), b.pmf_range(15), atol=1e-8,
-                             err_msg=f"mismatch for {op}")
 
 
 if __name__ == "__main__":

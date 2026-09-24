@@ -1,16 +1,16 @@
 """
-test_SparseDistPhaseVar.py
+test_SparseDiscPhaseVar.py
 
-Tests for SparseDistPhaseVar.py.
+Tests for SparseDiscPhaseVar.py.
 
 This concrete class supplies ``copy()``, ``new_var()`` and a constructor that
 guarantees sparse storage, on top of the logic in AbstractDiscretePhaseType
-(already covered in test_AbstractDistPhaseVar.py). The tests concentrate on
+(already covered in test_AbstractDiscPhaseVar.py). The tests concentrate on
 those, plus an exhaustive check that the sparse variable produces exactly the
 same numbers as the dense one: storage must not change the mathematics.
 
 Run with:
-    python3 -m unittest test_SparseDistPhaseVar -v
+    python3 -m unittest test_SparseDiscPhaseVar -v
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -313,7 +313,7 @@ class TestDoctests(unittest.TestCase):
         results = doctest.testmod(sparse_module, verbose=False)
         self.assertEqual(results.failed, 0,
                          f"{results.failed} doctest(s) failed in "
-                         f"SparseDistPhaseVar.py")
+                         f"SparseDiscPhaseVar.py")
 
 
 if __name__ == "__main__":
