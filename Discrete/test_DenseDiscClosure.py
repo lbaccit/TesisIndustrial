@@ -4,29 +4,17 @@ test_DenseDiscClosure.py
 Tests for the closure methods of DenseDiscretePhaseType: sum, min, max, mix,
 sum_geom and sum_ph.
 
-Discrete counterpart of jMarkov's ``test/jphase/DenseContClosureTest.java``:
-same variables (var1, var2 as uniformizations of Java's matrix1/matrix2, with
-Java's vectors, and varD, which is Java's own discrete variable
-matrixD/vectorD), same operations and parameters (mix(0.2, ...),
-sumGeom(0.2), var2.sumPH(varD)). Java's residualTime, eqResidualTime and
-waitingQ are continuous-only and have no discrete counterpart.
+Two layers of checks:
 
-Three layers of checks:
-
-1. ``DenseDiscClosureTest`` - like Java: the (alpha, A) produced by each
-   operation must equal the hand-built representation
-   (``reference_values.CLOSURE``, exact arithmetic) and the operands must not
-   change.
-2. ``DenseDiscClosureDistributionTest`` - the resulting DISTRIBUTION must
+1. DenseDiscClosureTest - the (alpha, A) produced by each operation must
+    equal the hand-built representation (reference_values.CLOSURE, exact
+    arithmetic) and the operands must not change.
+2. DenseDiscClosureDistributionTest - the resulting DISTRIBUTION must
    satisfy identities that hold for any independent random variables,
    phase-type or not: convolution for the sum, 1-(1-F)(1-G) and F*G for min
    and max, the p-weighted pmf for the mixture, and brute-force compound sums
    for sum_geom and sum_ph. Several fixtures have alpha_0 > 0 (mass at 0),
    which is where the geometric and PH-counted sums are delicate.
-3. ``DenseDiscClosureJavaDivergenceTest`` - the four places where the Java
-   formula is wrong for the discrete case (documented in the docstrings of
-   ``max``, ``sum_geom`` and ``sum_ph``): each test rebuilds Java's formula,
-   shows that it fails, and shows that this implementation does not.
 
 Run with:
     python3 -m unittest test_DenseDiscClosure -v
@@ -43,7 +31,7 @@ from numpy.testing import assert_allclose
 
 import discrete_fixtures as fx
 from DenseDiscPhaseVar import DenseDiscretePhaseType
-from matrix_utils import kronecker_sum, to_dense
+from matrix_utils import to_dense
 from reference_values import CLOSURE
 
 TOL = 1e-12
@@ -87,7 +75,7 @@ class ClosureFixtures(unittest.TestCase):
 
 
 class DenseDiscClosureTest(ClosureFixtures):
-    """Mirror of DenseContClosureTest.java for the discrete case."""
+    """Check the representations produced by the closure operations."""
 
     def check(self, calc, name, label):
         real = CLOSURE[name]
@@ -98,28 +86,22 @@ class DenseDiscClosureTest(ClosureFixtures):
         self.assertIsInstance(calc, type(self.var1))
 
     def test_sum(self):
-        """Java: testSum."""
         self.check(self.var1.sum(self.var2), "sum", "Sum of Variables")
 
     def test_min(self):
-        """Java: testMin."""
         self.check(self.var1.min(self.var2), "min", "Min of Variables")
 
     def test_max(self):
-        """Java: testMax."""
         self.check(self.var1.max(self.var2), "max", "Max of Variables")
 
     def test_mix(self):
-        """Java: testMix."""
         self.check(self.var1.mix(fx.MIX_P, self.var2), "mix", "Mix of Variables")
 
     def test_sum_geom(self):
-        """Java: testSumGeom."""
         self.check(self.var2.sum_geom(fx.SUM_GEOM_P), "sum_geom",
                    "Geometric Sum of Variables")
 
     def test_sum_ph(self):
-        """Java: testSumPH."""
         self.check(self.var2.sum_ph(self.varD), "sum_ph",
                    "Sum of a discrete phase number")
 
@@ -194,55 +176,6 @@ class DenseDiscClosureDistributionTest(ClosureFixtures):
             self.var1.mix(1.5, self.var2)
         with self.assertRaises(ValueError):
             self.var1.sum_geom(0.0)
-
-
-class DenseDiscClosureJavaDivergenceTest(ClosureFixtures):
-    """Java's discrete formulas, rebuilt here, fail where this code does not."""
-
-    def test_max_java_formula_is_not_substochastic(self):
-        """
-        Java's discrete max() copies the continuous one: Kronecker SUM for
-        the joint block and identities at the boundary. In discrete time that
-        gives rows summing to more than 1.
-        """
-        X, Y = self.varD, self.varD
-        n1, n2 = X.n_phases, Y.n_phases
-        java_joint = kronecker_sum(to_dense(X.A), to_dense(Y.A))
-        java_edges = np.hstack([np.kron(np.eye(n1), Y.get_mat0()[:, None]),
-                                np.kron(X.get_mat0()[:, None], np.eye(n2))])
-        java_rows = np.hstack([java_joint, java_edges]).sum(axis=1)
-        self.assertGreater(java_rows.max(), 1.0 + 1e-6)
-        ours = to_dense(X.max(Y).A)
-        self.assertTrue(np.all(ours.sum(axis=1) <= 1.0 + 1e-12))
-
-    def test_sum_ph_works_when_phase_counts_differ(self):
-        """Java inverts I - a0 S against I_n1: it only runs when n1 == n2."""
-        self.assertNotEqual(self.var2.n_phases, self.varD.n_phases)
-        self.assertEqual(self.var2.sum_ph(self.varD).n_phases, 3 * 2)
-
-    def test_sum_geom_java_formula_fails_with_mass_at_zero(self):
-        """Java: alpha_res = alpha, A_res = A + (1-p) a alpha (no 1/(1-(1-p)a0))."""
-        p, X = fx.SUM_GEOM_P, self.var2
-        self.assertGreater(X.get_vec0(), 0)
-        java = self.make(X.alpha, to_dense(X.A) + (1 - p) * np.outer(X.get_mat0(), X.alpha))
-        pmf_n = [0.0] + [p * (1 - p) ** (n - 1) for n in range(1, 400)]
-        truth = compound_pmf(X.pmf_range(K), pmf_n)
-        self.assertGreater(np.max(np.abs(java.pmf_range(K) - truth)), 1e-3)
-        assert_allclose(X.sum_geom(p).pmf_range(K), truth, atol=1e-10)
-
-    def test_sum_ph_java_formula_fails_with_mass_at_zero(self):
-        """Java multiplies the restart term by an extra (1 - a0)."""
-        X, N = self.var2, self.varD
-        a0 = X.get_vec0()
-        self.assertGreater(a0, 0)
-        S = to_dense(N.A)
-        M = np.linalg.inv(np.eye(N.n_phases) - a0 * S)
-        java = self.make(np.kron(X.alpha, M.T @ N.alpha),
-                         np.kron(to_dense(X.A), np.eye(N.n_phases))
-                         + np.kron((1 - a0) * np.outer(X.get_mat0(), X.alpha), M @ S))
-        truth = compound_pmf(X.pmf_range(K), N.pmf_range(400))
-        self.assertGreater(np.max(np.abs(java.pmf_range(K) - truth)), 1e-3)
-        assert_allclose(X.sum_ph(N).pmf_range(K), truth, atol=1e-10)
 
 
 if __name__ == "__main__":

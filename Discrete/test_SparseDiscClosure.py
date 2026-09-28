@@ -3,12 +3,12 @@ test_SparseDiscClosure.py
 
 Tests for the closure methods of SparseDiscretePhaseType.
 
-Discrete counterpart of jMarkov's ``test/jphase/SparseContClosureTest.java``:
-the three test classes of ``test_DenseDiscClosure`` re-run with the matrices
-stored sparsely, once per SciPy sparse API, against the same expected values.
-``SparseDiscClosureStorageTest`` adds what only matters for sparse storage:
-results stay sparse, and combining a Dense with a Sparse variable returns the
-storage of the variable the method is called on (as Java's ``newVar`` does).
+The sparse closure tests re-run the dense closure representation and
+distribution checks with matrices stored sparsely, once per SciPy sparse API,
+against the same expected values.
+SparseDiscClosureStorageTest adds what only matters for sparse storage:
+results stay sparse, and combining dense and sparse variables follows the
+storage type of the variable on which the operation is called.
 
 Run with:
     python3 -m unittest test_SparseDiscClosure -v
@@ -38,7 +38,7 @@ def make_csr_matrix(vector, matrix):
 
 
 class SparseDiscClosureTest(dense.DenseDiscClosureTest):
-    """Mirror of SparseContClosureTest.java (csr_array storage)."""
+    """Closure representation tests using csr_array storage."""
     make = staticmethod(make_csr_array)
 
 
@@ -52,10 +52,6 @@ class SparseDiscClosureDistributionTest(dense.DenseDiscClosureDistributionTest):
 
 class SparseDiscClosureDistributionTestSpmatrix(dense.DenseDiscClosureDistributionTest):
     make = staticmethod(make_csr_matrix)
-
-
-class SparseDiscClosureJavaDivergenceTest(dense.DenseDiscClosureJavaDivergenceTest):
-    make = staticmethod(make_csr_array)
 
 
 class SparseDiscClosureStorageTest(unittest.TestCase):

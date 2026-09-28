@@ -3,7 +3,7 @@ test_SparseDiscPhaseVar.py
 
 Tests for SparseDiscPhaseVar.py.
 
-This concrete class supplies ``copy()``, ``new_var()`` and a constructor that
+This concrete class supplies copy(), new_var() and a constructor that
 guarantees sparse storage, on top of the logic in AbstractDiscretePhaseType
 (already covered in test_AbstractDiscPhaseVar.py). The tests concentrate on
 those, plus an exhaustive check that the sparse variable produces exactly the

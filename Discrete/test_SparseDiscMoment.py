@@ -3,8 +3,7 @@ test_SparseDiscMoment.py
 
 Tests for the moment methods of SparseDiscretePhaseType.
 
-Discrete counterpart of jMarkov's ``test/jphase/SparseContMomentTest.java``:
-every test of ``test_DenseDiscMoment`` re-run with the matrix stored sparsely,
+Every test of test_DenseDiscMoment is re-run with the matrix stored sparsely,
 once per SciPy sparse API, against the same expected values.
 
 Run with:

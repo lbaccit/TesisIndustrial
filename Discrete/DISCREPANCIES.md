@@ -522,11 +522,11 @@ copia no nace absorbida), pero no es lo que devuelve.
 | A.5 | `CV(double[])` | `MatrixUtils.java:1073` | `test_matrix_utils.TestDistanceScalarStats.test_cv_and_scv` |
 | B.1 | `cdf(x)` | `AbstractDiscPhaseVar.java:166` | `test_AbstractDiscPhaseVar.TestPmfCdfConsistency.test_cdf_equals_cumulative_pmf` |
 | B.2 | `moment`/`variance`/`CV` | `AbstractDiscPhaseVar.java:120-160` | `test_AbstractDiscPhaseVar.TestGeometricAnalytic` |
-| B.3 | `quantil(p)` | `AbstractDiscPhaseVar.java:254` | `test_AbstractDiscPhaseVar.TestGeometricAnalytic.test_quantile_does_not_reproduce_java_bug` |
-| B.4 | `sumPH` (dimensión) | `AbstractDiscPhaseVar.java:39` | `test_DenseDiscClosure.DenseDiscClosureJavaDivergenceTest.test_sum_ph_works_when_phase_counts_differ` |
-| B.5 | `max()` | `AbstractDiscPhaseVar.java:413` | `test_DenseDiscClosure.DenseDiscClosureJavaDivergenceTest.test_max_java_formula_is_not_substochastic` |
-| B.6 | `sumGeom(p)` | `AbstractDiscPhaseVar.java:332` | `test_DenseDiscClosure.DenseDiscClosureJavaDivergenceTest.test_sum_geom_java_formula_fails_with_mass_at_zero` |
-| B.7 | `sumPH` (factor extra) | `AbstractDiscPhaseVar.java:43-48` | `test_DenseDiscClosure.DenseDiscClosureJavaDivergenceTest.test_sum_ph_java_formula_fails_with_mass_at_zero` |
+| B.3 | `quantil(p)` | `AbstractDiscPhaseVar.java:254` | `test_AbstractDiscPhaseVar.TestGeometricAnalytic.test_quantile_matches_direct_search` |
+| B.4 | `sumPH` (dimensión) | `AbstractDiscPhaseVar.java:39` | `test_DenseDiscClosure.DenseDiscClosureDistributionTest.test_phase_counts` |
+| B.5 | `max()` | `AbstractDiscPhaseVar.java:413` | `test_DenseDiscClosure.DenseDiscClosureDistributionTest.test_min_and_max_cdf_identities` |
+| B.6 | `sumGeom(p)` | `AbstractDiscPhaseVar.java:332` | `test_DenseDiscClosure.DenseDiscClosureDistributionTest.test_sum_geom_is_compound_geometric_sum` |
+| B.7 | `sumPH` (factor extra) | `AbstractDiscPhaseVar.java:43-48` | `test_DenseDiscClosure.DenseDiscClosureDistributionTest.test_sum_ph_is_compound_sum` |
 
 Todos los contraejemplos numéricos de este documento son reproducibles
 ejecutando los scripts usados para generarlos (disponibles en el historial

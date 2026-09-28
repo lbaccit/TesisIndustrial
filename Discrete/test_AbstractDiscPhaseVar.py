@@ -6,12 +6,7 @@ implementation (the abstract class cannot be instantiated on its own).
 
 Where this file fits
 --------------------
-jMarkov (Java) has NO tests for the discrete Phase-Type variable.
-The files test_{Dense,Sparse}Disc{Prob,Moment,Closure}.py mirror those six
-Java tests one to one (and check the discrete fixtures against Java's own
-continuous reference values through uniformization).
-
-This file covers what those Java tests do not: closed-form distributions,
+This file covers closed-form distributions,
 internal consistency between methods, constructor validation, equality and
 hashing. It rests on:
 
@@ -22,8 +17,7 @@ hashing. It rests on:
   2. Brute force: summing pmf(k) over many k and comparing against 1, or
      building the cdf by accumulating the pmf term by term and comparing it
      against cdf() directly.
-  3. The quantile values where Java's Newton-Raphson silently fails, reproduced
-     exactly.
+    3. Direct-search references for discrete quantiles.
 
 Run with:
     python3 -m unittest test_AbstractDiscPhaseVar -v
@@ -121,18 +115,6 @@ class TestGeometricAnalytic(unittest.TestCase):
 
     def test_median_equals_quantile_one_half(self):
         self.assertEqual(self.X.median(), self.X.quantile(0.5))
-
-    def test_quantile_does_not_reproduce_java_bug(self):
-        """
-        Documented in AbstractDiscPhaseVar.py: Java's quantil() applies
-        Newton-Raphson and silently returns 0.0 when it fails to converge
-        within 100 iterations. For Geometric(0.5) that happens at p=0.9, 0.95
-        and 0.99, where the correct values are 4, 5 and 7 respectively.
-        """
-        self.assertEqual(self.X.quantile(0.9), 4)
-        self.assertEqual(self.X.quantile(0.95), 5)
-        self.assertEqual(self.X.quantile(0.99), 7)
-
 
 class TestNegativeBinomialAnalytic(unittest.TestCase):
     """Negative Binomial(r=2, p=0.4): two phases in series."""

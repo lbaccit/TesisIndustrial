@@ -3,7 +3,7 @@ test_DenseDiscPhaseVar.py
 
 Tests for DenseDiscPhaseVar.py.
 
-This concrete class only supplies ``copy()`` and ``new_var()`` on top of the
+This concrete class only supplies copy() and new_var() on top of the
 logic in AbstractDiscretePhaseType (already covered in
 test_AbstractDiscPhaseVar.py), so the tests concentrate on those two operations
 and on the general contract promised by the class docstring (its own two

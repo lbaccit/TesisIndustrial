@@ -3,11 +3,11 @@ test_SparseDiscProb.py
 
 Tests for the probability methods of SparseDiscretePhaseType.
 
-Discrete counterpart of jMarkov's ``test/jphase/SparseContProbTest.java``. As
+Discrete counterpart of jMarkov's test/jphase/SparseContProbTest.java. As
 in Java, where the Sparse test repeats the Dense one with a
-``FlexCompRowMatrix``, every test of ``test_DenseDiscProb`` is re-run here
-with the matrix stored sparsely - once per SciPy sparse API (``csr_array``
-and the older ``csr_matrix``) - against the same expected values.
+FlexCompRowMatrix, every test of test_DenseDiscProb is re-run here
+with the matrix stored sparsely - once per SciPy sparse API (csr_array
+and the older csr_matrix) - against the same expected values.
 
 Run with:
     python3 -m unittest test_SparseDiscProb -v

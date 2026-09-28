@@ -25,7 +25,7 @@ python3 run_tests.py          # verbose
 python3 run_tests.py -q       # una línea por archivo
 ```
 
-Requiere `numpy` y `scipy`. La suite contiene actualmente 255 tests.
+Requiere `numpy` y `scipy`. La suite contiene actualmente 246 tests.
 
 ## Discrepancias históricas y decisiones de implementación
 
