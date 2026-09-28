@@ -21,7 +21,6 @@ as exp_unif, together with its private helpers computeLdaMax and resultFromMedia
 
 The direct matrix exponential was implemented using scipy.linalg.expm (same function as ctpy.py)
 In Python, we do not need to create a function called pow(x, n) because it is already implemented as x ** n. 
-As well as functions like OnesVector, concatRows, etc. that are already implemented in NumPy and SciPy.
 --------------------------------
 
 Dense vs. sparse
@@ -107,34 +106,44 @@ EPS = 1.0e-10
 # =============================================================================
 
 def ones_vector(m: int) -> np.ndarray:
-    """Returns a one-dimensional vector of length m filled with ones. Java: ``OnesVector(int m)``."""
+    """
+    One-dimensional array of length m filled with ones - Java: OnesVector(int m).
+
+    In Java there were 2 functions with the same name, 
+    we decided to only write the first one since in Python, 
+    vectors are always dense ndarrays.
+    """
     return np.ones(m, dtype=float)
 
 
 def ones_row(m: int) -> np.ndarray:
-    """Row matrix (1, m) of ones. Java: ``OnesRow(int m)``."""
+    """
+    Row matrix (1, m) of ones - Java: OnesRow(int m).
+    """
     return np.ones((1, m), dtype=float)
 
 
 def ones_col(m: int) -> np.ndarray:
-    """Column matrix (m, 1) of ones. Java: ``OnesCol(int m)``."""
+    """
+    Column matrix (m, 1) of ones - Java: OnesCol(int m)
+    """
     return np.ones((m, 1), dtype=float)
 
+"""
+Java has four kronecker functions because it distinguishes the Matrix
+and Vector types, and because a Vector can enter either as a column or as a
+row. In NumPy everything is an ndarray, so we decided to divide it with the name of the functions:
 
+    kronecker(Matrix A, Matrix B, res)       -> kronecker(A, B)
+    kronecker(Matrix A, Vector B, res)       -> kronecker_mx_col_vector(A, b)
+    kronecker(Vector A, Matrix B, res)       -> kronecker_col_vector_mx(a, B)
+    kroneckerMxRowVector(Matrix A, Vector B) -> kronecker_mx_row_vector(A, b)
+"""
 def kronecker(A, B) -> np.ndarray:
     """
-    Kronecker product A (x) B. Java: ``kronecker(Matrix A, Matrix B)``.
+    Kronecker product A (x) B - Java: kronecker(Matrix A, Matrix B).
 
-    Used by the PH closure operations (min, max).
-
-    Java has four ``kronecker`` overloads because it distinguishes the Matrix
-    and Vector types, and because a Vector can enter either as a column or as a
-    row. In NumPy everything is an ndarray, so here they are split by name:
-
-        kronecker(Matrix A, Matrix B, res)       -> kronecker(A, B)
-        kronecker(Matrix A, Vector B, res)       -> kronecker_mx_col_vector(A, b)
-        kronecker(Vector A, Matrix B, res)       -> kronecker_col_vector_mx(a, B)
-        kroneckerMxRowVector(Matrix A, Vector B) -> kronecker_mx_row_vector(A, b)
+    Used by the PH closure operations (min, max)
     """
     if is_sparse(A) or is_sparse(B):
         return sparse.kron(A, B, format="csr")
@@ -143,9 +152,9 @@ def kronecker(A, B) -> np.ndarray:
 
 def kronecker_mx_col_vector(A, b) -> np.ndarray:
     """
-    A (x) b, with b treated as a COLUMN vector.
+    Kronecker product A (x) b, with b treated as a COLUMN vector.
 
-    Java: ``kronecker(Matrix A, Vector B, Matrix res)``, whose output matrix has
+    Java: kronecker(Matrix A, Vector B, Matrix res), whose output matrix has
     size (A.numRows * b.size, A.numColumns).
     """
     b = as_vector(b, "b").reshape(-1, 1)
@@ -158,7 +167,7 @@ def kronecker_col_vector_mx(a, B) -> np.ndarray:
     """
     a (x) B, with a treated as a COLUMN vector.
 
-    Java: ``kronecker(Vector A, Matrix B, Matrix res)``, whose output matrix has
+    Java: kronecker(Vector A, Matrix B, Matrix res), whose output matrix has
     size (a.size * B.numRows, B.numColumns).
     """
     a = as_vector(a, "a").reshape(-1, 1)
@@ -171,20 +180,19 @@ def kronecker_mx_row_vector(A, b) -> np.ndarray:
     """
     A (x) b, with b treated as a ROW vector.
 
-    Java: ``kroneckerMxRowVector(Matrix A, Vector B, Matrix res)``, with output
+    Java: kroneckerMxRowVector(Matrix A, Vector B, Matrix res), with output
     of size (A.numRows, A.numColumns * b.size).
 
-    Divergence from Java
+    Changes from the Java version
     --------------------
-    The Java version writes into column ``j1 * c1 + i2``, where ``c1`` is the
-    number of columns of A. The correct stride is ``j1 * n2 + i2``, with
-    ``n2 = b.size``. The two agree only when A has as many columns as b has
+    The Java version writes into column j1 * c1 + i2, where c1 is the
+    number of columns of A. 
+    The correct stride is j1 * n2 + i2, with n2 = b.size. The two agree only when A has as many columns as b has
     entries. With A of size 2x3 and b of size 2, for example, Java writes into
     columns {0,1,3,4,6,7} of a 2x6 matrix: it runs out of range and leaves
     columns 2 and 5 unfilled.
 
-    The correct Kronecker product is implemented here. Nothing else in jphase
-    calls this method, so the bug never showed up.
+    Nothing else in jphase calls this method, so the bug never showed up.
     """
     b = as_vector(b, "b").reshape(1, -1)
     if is_sparse(A):
@@ -196,23 +204,25 @@ def kronecker_sum(A, B) -> np.ndarray:
     """
     Kronecker sum A (+) B = A (x) I_nb + I_na (x) B.
 
-    Java: ``kroneckerSum(Matrix A, Matrix B)``.
+    Java: kroneckerSum(Matrix A, Matrix B).
 
-    It is the generator of two processes evolving in parallel; it shows up in
-    the minimum and the maximum of two PH variables.
+    It returns the kronecker sum of two matrices, which is used in the closure 
+    operations (min, max) to build the generator of the resulting variable.
     """
     return (kronecker(A, eye_like(B))
             + kronecker(eye_like(A), B))
 
 
 def kronecker_vectors(a, b) -> np.ndarray:
-    """Kronecker product of two vectors. Java: ``kroneckerVectors``."""
+    """
+    Kronecker product of two vectors - Java: kroneckerVectors
+    """
     return np.kron(as_vector(a, "a"), as_vector(b, "b"))
 
 
 def concat_rows(A, B) -> np.ndarray:
     """
-    Stack A on top of B (same number of columns). Java: ``concatRows``.
+    Concatenates A and B vertically keeping the same number of columns - Java: concatRows.
     """
     if is_sparse(A) or is_sparse(B):
         return sparse.vstack([A, B], format="csr")
@@ -227,7 +237,7 @@ def concat_rows(A, B) -> np.ndarray:
 
 def concat_cols(A, B) -> np.ndarray:
     """
-    Place A and B side by side (same number of rows). Java: ``concatCols``.
+    Concatenates A and B horizontally keeping the same number of rows - Java: concatCols.
     """
     if is_sparse(A) or is_sparse(B):
         return sparse.hstack([A, B], format="csr")
@@ -242,15 +252,10 @@ def concat_cols(A, B) -> np.ndarray:
 
 def concat_quad(left_up, right_up, left_down, right_down) -> np.ndarray:
     """
-    Assemble the block matrix
+    Concatenates the columns of the left and right upper matrices
+    and this result is then concatenated by the rows with the concatenation of the left and right lower matrices.
 
-        [ left_up    right_up   ]
-        [ left_down  right_down ]
-
-    Java: ``concatQuad(leftUp, rightUp, leftDown, rightDown, res)``.
-
-    This is the assembly used by sum(), mix(), min() and max() to build the
-    generator of the resulting variable.
+    Java: concatQuad(leftUp, rightUp, leftDown, rightDown, res).
     """
     blocks = (left_up, right_up, left_down, right_down)
     if any(is_sparse(b) for b in blocks):
@@ -268,17 +273,19 @@ def concat_quad(left_up, right_up, left_down, right_down) -> np.ndarray:
 
 
 def concat_vectors(a, b) -> np.ndarray:
-    """Concatenate two 1-D vectors. Java: ``concatVectors``."""
+    """
+    Concatenate two 1-D vectors. Java: concatVectors.
+    """
     return np.concatenate((np.asarray(a, dtype=float).ravel(),
                            np.asarray(b, dtype=float).ravel()))
 
 
 def mult_vector(a, b) -> np.ndarray:
     """
-    Outer product a * b^T. Java: ``multVector(Vector A, Vector B, Matrix res)``.
+    Outer product a * b^T - Java: multVector(Vector A, Vector B, Matrix res).
 
     It appears in the closure operations when connecting the phases of one
-    variable to those of the next: ``mult_vector(a1, alpha2)``.
+    variable to those of the next: mult_vector(a1, alpha2).
     """
     return np.outer(as_vector(a, "a"), as_vector(b, "b"))
 
@@ -298,12 +305,12 @@ def mat_power(A, k: int, left_vec=None, right_vec=None):
     k : int
         Exponent, k >= 0. A^0 = I.
     left_vec, right_vec : array_like, optional
-        If both are given, returns the scalar ``left_vec @ A^k @ right_vec``.
-        On a sparse A it is computed as k vector-matrix products,
-        ``((left_vec A) A) ... A``, without forming A^k: the powers of a
-        sparse matrix fill in quickly (for a bidiagonal A, A^k has k+1
-        diagonals), so the vector route costs O(k nnz) instead of the time and
-        memory of an almost dense A^k.
+        If both are given, returns left_vec @ A^k @ right_vec.
+
+        On sparse matrices, the scalar is computed by multiplying the vector by A
+        repeatedly instead of explicitly forming A^k. This saves memory because powers
+        of sparse matrices can quickly become dense. The cost is approximately
+        O(k * nnz(A)).
 
     Returns
     -------
@@ -322,11 +329,10 @@ def mat_power(A, k: int, left_vec=None, right_vec=None):
             v = A.T @ v
         return float(v @ as_vector(right_vec, "right_vec"))
     if is_sparse(A):
-        # ``A ** k`` is NOT used: the operator changes meaning between the two
+        # A ** k is NOT used because the operator changes meaning between the two
         # scipy APIs. On spmatrix (csr_matrix) it is MATRIX power; on sparray
         # (csr_array) it is ELEMENT-WISE power, just as on ndarray. With
-        # csr_array, ``A ** 2`` returns the squared entries, not A@A, and gives
-        # no warning. So we multiply explicitly.
+        # csr_array, A ** 2 returns the squared entries, not A@A, so we multiply explicitly.
         Ak = eye_like(A)
         for _ in range(k):
             Ak = Ak @ A
@@ -344,17 +350,16 @@ def sum_mat_power(A, k: int, left_vec=None, right_vec=None):
     """
     Partial sum of powers: S = sum_{j=1}^{k} A^{j-1} = I + A + ... + A^{k-1}.
 
-    Java: ``sumMatPower(Matrix A, int k, Vector leftVec, Vector rightVec)``.
+    Java: sumMatPower(Matrix A, int k, Vector leftVec, Vector rightVec).
 
-    If the vectors are given, returns the scalar ``left_vec @ S @ right_vec``.
+    If the vectors are given, returns the scalar left_vec @ S @ right_vec.
 
-    Notes
-    -----
+    Note:
     It shows up when accumulating the discrete CDF and in the loss functions.
     When sp(A) < 1 and k is large, the limit is (I - A)^{-1}; in those cases it
     is better to solve the system than to sum (see ``solve_power``).
 
-    Divergence from Java
+    Changes from Java version
     --------------------
     The Java version does not accumulate the powers. Its loop reads:
 
@@ -365,16 +370,14 @@ def sum_mat_power(A, k: int, left_vec=None, right_vec=None):
             sum.add(temp);
         }
 
-    In MTJ, ``X.mult(B, C)`` computes C = X*B and returns C, leaving X
-    untouched. Since the return value is never assigned, ``temp`` stays equal
-    to the identity on every pass and ``sum`` ends up being k*I. In other
-    words, Java returns ``k * (leftVec . rightVec)`` instead of the sum of
-    powers. Compare with ``matPower``, which does write
-    ``result = result.mult(A, A.copy())``.
+    In MTJ, X.mult(B, C) computes C = X*B and returns C, leaving X
+    untouched. Since the return value is never assigned, temp stays equal
+    to the identity on every pass and sum ends up being k*I. In other
+    words, Java returns k * (leftVec . rightVec) instead of the sum of
+    powers. 
 
-    The semantics described by the javadoc are implemented here. No other file
-    in jphase calls ``sumMatPower``, so the bug is latent and does not affect
-    published results; it is still worth reporting.
+    Nothing else in jphase calls this method, so the bug never showed up.
+
     """
     if k < 1:
         raise ValueError(f"sum_mat_power: k must be >= 1; got {k}.")
@@ -397,22 +400,22 @@ def sum_mat_power(A, k: int, left_vec=None, right_vec=None):
 
 def distance(v1, v2) -> float:
     """
-    Maximum relative distance between two arrays. Java: ``distance``.
+    Maximum relative distance between two arrays - Java: distance.
 
     For each entry it computes (v1_i - v2_i) / v1_i when v1_i > 0, and the
     absolute difference otherwise; it returns the maximum in absolute value.
 
-    Careful
-    -------
-    The original javadoc describes it as the "maximum euclidean distance", but
-    the code implements a RELATIVE distance (it divides by v1_i). The actual
-    behaviour is reproduced here, not the description. It is used as the
-    stopping criterion in the jPhaseFit fitting algorithms.
+    Note: 
+
+    In Java the function says it calculates de maximum euclidean distance, 
+    but it actually calculates the maximum relative distance. We used the function 
+    as it is but we added a note to clarify this.
+
     """
     v1 = np.asarray(v1, dtype=float).ravel()
     v2 = np.asarray(v2, dtype=float).ravel()
     if v1.shape != v2.shape:
-        return -1.0  # same behaviour as Java
+        return -1.0
     delta = v1 - v2
     positive = v1 > 0
     rel = delta.copy()
@@ -422,7 +425,7 @@ def distance(v1, v2) -> float:
 
 def scalar(A) -> float:
     """
-    Extract the single entry of a one-column matrix. Java: ``scalar``.
+    Extract the single entry of a one-column matrix. Java: scalar.
     """
     A = np.asarray(A, dtype=float)
     A2 = np.atleast_2d(A)
@@ -434,23 +437,23 @@ def scalar(A) -> float:
 
 
 def average(data) -> float:
-    """Sample mean. Java: ``average(double[] datos)``."""
+    """
+    Sample mean. Java: average(double[] datos)."""
     return float(np.mean(np.asarray(data, dtype=float)))
 
 
 def average2(data) -> float:
-    """Second (non-central) moment. Java: ``average2(double[] data)``."""
+    """
+    Second (non-central) moment. 
+    Java: average2(double[] data).
+    """
     arr = np.asarray(data, dtype=float)
     return float(np.mean(arr * arr))
 
 
 def variance(data) -> float:
     """
-    POPULATION variance (divides by n). Java: ``variance(double[] data)``.
-
-    Java's divisor (n, not n-1) is reproduced so that cross-validation against
-    jphase matches. If the sample variance is needed, use
-    ``np.var(data, ddof=1)``.
+    Variance (divides by n). Java: variance(double[] data).
     """
     m = average(data)
     return average2(data) - m * m
@@ -458,37 +461,35 @@ def variance(data) -> float:
 
 def cv(data) -> float:
     """
-    Java: ``CV(double[] data)``, which returns ``variance / mean^2``.
+    Coefficient of variation (squared). Java: CV(double[] data), which returns variance / mean^2.
 
-    Careful with the name
-    ---------------------
+    Note:
     That is the SQUARED coefficient of variation (SCV), not the CV. The CV is
-    ``sqrt(variance) / mean``. Java's name and behaviour are kept for
-    traceability; for the true CV use ``cv_true``.
+    sqrt(variance) / mean. Java's name and behaviour are kept for
+    traceability; for the true CV use cv_true.
     """
     m = average(data)
     return variance(data) / (m * m)
 
 
 def cv_true(data) -> float:
-    """True coefficient of variation, sd/mean. Does not exist in Java."""
+    """
+    True coefficient of variation, sd/mean. 
+    Does not exist in Java.
+    """
     return sqrt(variance(data)) / average(data)
 
 
 def check_sub_stochastic_vector(a, tol: float = EPS) -> bool:
     """
-    Check that `a` is a sub-stochastic vector: a_i >= 0 and sum(a) <= 1.
+    Check that a is a sub-stochastic vector: a_i >= 0 and sum(a) <= 1.
 
-    Java: ``checkSubStochasticVector(Vector a)``.
+    Java: checkSubStochasticVector(Vector a).
 
-    This is the validation of the initial vector alpha, identical in the
-    continuous and the discrete case. The missing mass, 1 - sum(a), is the
-    probability of starting already absorbed.
-
-    Difference from the Java version
+    Changes from the Java version
     --------------------------------
-    Java's sign loop starts at ``i = 1``, so a[0] is added to the sum but
-    never checked for being negative: ``a = [-5, 0.5]`` passes there (sum
+    Java's sign loop starts at i = 1, so a[0] is added to the sum but
+    never checked for being negative: a = [-5, 0.5] passes there (sum
     -4.5 <= 1) and is rejected here.
     """
     a = np.asarray(a, dtype=float).ravel()
@@ -499,31 +500,24 @@ def check_sub_stochastic_vector(a, tol: float = EPS) -> bool:
 
 def check_sub_generator_matrix(A, tol: float = EPS) -> bool:
     """
-    Check that `A` is a sub-generator (CONTINUOUS case).
+    Check that A is a sub-generator (CONTINUOUS case).
 
-    Java: ``checkSubGeneratorMatrix(Matrix A)``.
+    Java: checkSubGeneratorMatrix(Matrix A).
 
     Conditions:
       1. A_ij >= 0 for i != j
       2. A_ii <  0
       3. sum_j A_ij <= 0 for every row
-      4. sum_j A_ij <  0 for at least one row
 
-    Differences from the Java version
+    Changes from the Java version
     ---------------------------------
     The Java version has two gaps that are closed here:
 
-    a) Its inner loop starts at ``j = 1``, so column 0 is never inspected:
+    a) Its inner loop starts at j = 1, so column 0 is never inspected:
        neither A[0][0] < 0 nor A[i][0] >= 0 is verified.
-    b) It does not require condition 4, so a full generator (every row summing
-       to 0, with no exit to absorption) passes validation even though it does
-       not define a PH: the absorption vector a = -A*1 would be identically
-       zero and the variable would never terminate.
-    c) It starts from ``res = true`` and only runs the checks when the matrix
+    b) It starts from res = true and only runs the checks when the matrix
        is square, so a non-square matrix passes. Here it is rejected.
 
-    It is worth confirming with the advisor before "fixing" the Java side, in
-    case some other part of jphase relies on the lax behaviour.
     """
     if is_sparse(A):
         if A.shape[0] != A.shape[1]:
@@ -538,7 +532,7 @@ def check_sub_generator_matrix(A, tol: float = EPS) -> bool:
         row_sums = np.asarray(A.sum(axis=1)).ravel()
         if np.any(row_sums > tol):
             return False
-        return bool(np.any(row_sums < -tol))
+        return True
 
     A = np.asarray(A, dtype=float)
     if A.ndim != 2 or A.shape[0] != A.shape[1]:
@@ -552,16 +546,15 @@ def check_sub_generator_matrix(A, tol: float = EPS) -> bool:
     row_sums = A.sum(axis=1)
     if np.any(row_sums > tol):
         return False
-    return bool(np.any(row_sums < -tol))
+    return True
 
 
 # =============================================================================
-# PART 2 - Ported from the abstract classes of jphase
+# PART 2 - Functions from the abstract classes of jphase
 #
 # In Java these two live as instance methods on AbstractContPhaseVar and
 # AbstractDiscPhaseVar (getVec0 / getMat0). Since their definition is identical
-# in both hierarchies apart from the sign, they are centralized here as
-# functions.
+# in both hierarchies apart from the sign, we decided to unify them in this file.
 # =============================================================================
 
 def vec0(alpha) -> float:
@@ -570,10 +563,11 @@ def vec0(alpha) -> float:
 
         alpha_0 = 1 - alpha * 1
 
-    Java: ``getVec0()`` (identical in the continuous and the discrete
+    Java: getVec0() (identical in the continuous and the discrete
     hierarchy).
 
-    Continuous: produces an atom at t = 0.  Discrete: it is P(X = 0).
+    Continuous: produces an atom at t = 0.  
+    Discrete: it is P(X = 0).
     """
     return 1.0 - float(np.asarray(alpha, dtype=float).sum())
 
@@ -585,9 +579,9 @@ def mat0(A, discrete: bool) -> np.ndarray:
         Continuous:  a = -A * 1        (absorption rates)
         Discrete:    a =  1 - A * 1    (probability of absorbing in one step)
 
-    Java: ``getMat0()`` in ``AbstractContPhaseVar`` and in
-    ``AbstractDiscPhaseVar`` respectively; both versions are unified through the
-    `discrete` parameter.
+    Java: getMat0() in AbstractContPhaseVar and in
+    AbstractDiscPhaseVar respectively.
+    Both versions are unified through the discrete parameter.
     """
     ones = np.ones(A.shape[0])
     outflow = np.asarray(A @ ones, dtype=float).ravel()
@@ -599,33 +593,35 @@ def mat0(A, discrete: bool) -> np.ndarray:
 # =============================================================================
 # PART 3 - Additions that do NOT exist in MatrixUtils.java
 #
-# Everything in this section is new. It is marked apart so that it is clear
-# what is migration and what is our own contribution when defending the thesis.
+# In this section, every function is new and does not exist in the Java version. They are
+# added to provide additional functionality that is not available in the original Java implementation.
 # =============================================================================
 
 def is_sparse(M) -> bool:
     """
-    [NEW] Is `M` a SciPy sparse matrix?
+    Is `M` a SciPy sparse matrix?
 
-    Covers both scipy.sparse APIs: the old one based on ``spmatrix``
-    (csr_matrix, ...) and the new one based on ``sparray`` (csr_array, ...).
+    Covers both scipy.sparse APIs: the old one based on spmatrix
+    (csr_matrix) and the new one based on sparray (csr_array).
     """
     return bool(sparse.issparse(M))
 
 
 def _is_sparray(M) -> bool:
-    """Does `M` belong to the new API (sparray) rather than the old (spmatrix)?"""
+    """
+    Does M belong to the new API (sparray) rather than the old (spmatrix)?
+    """
     kind = getattr(sparse, "sparray", None)
     return kind is not None and isinstance(M, kind)
 
 
 def eye_like(A, n: int = None):
     """
-    [NEW] Identity of the same type and format as `A`.
+    Identity of the same type and format as A.
 
-    Needed because ``A ** 0`` raises ``NotImplementedError`` in scipy: raising a
-    sparse matrix to the zeroth power would produce a dense one, and scipy
-    refuses to do that silently. Here the sparse identity is built explicitly.
+    We created it because if we used A ** 0, it would raise NotImplementedError in scipy: 
+    raising a sparse matrix to the zeroth power would produce a dense one
+    Here the sparse identity is built explicitly.
     """
     n = A.shape[0] if n is None else n
     if not is_sparse(A):
@@ -636,7 +632,9 @@ def eye_like(A, n: int = None):
 
 
 def to_dense(M) -> np.ndarray:
-    """[NEW] Densify `M` if it is sparse; if it is already dense, return it as is."""
+    """
+    Densify M if it is sparse; if it is already dense, return it as is.
+    """
     if is_sparse(M):
         return np.asarray(M.todense(), dtype=float)
     return np.asarray(M, dtype=float)
@@ -644,21 +642,19 @@ def to_dense(M) -> np.ndarray:
 
 def as_vector(v, name: str = "alpha") -> np.ndarray:
     """
-    [NEW] Convert `v` into a 1-D float64 array.
+    Convert v into a 1-D float64 array.
 
     It accepts a 2-D input with a single row or column and flattens it, because
-    writing ``np.array([[0.7, 0.3]])`` instead of ``np.array([0.7, 0.3])`` is a
-    common mistake and cannot happen in Java (the Vector and Matrix types are
-    distinct there, whereas here both are ndarray).
+    writing np.array([[0.7, 0.3]]) instead of 
+    np.array([0.7, 0.3]) is a
+    common mistake since both are ndarrays.
 
     It rejects SciPy sparse matrices with an explicit message rather than
-    letting ``np.asarray`` raise an unhelpful ValueError.
+    letting np.asarray raise an unhelpful ValueError.
     """
     if is_sparse(v):
-        # Vectors are always densified. That is O(n) against the O(n^2) it
-        # costs to densify the matrix, so the saving would be marginal while
-        # complicating every downstream operation. Java does use SparseVector,
-        # but for uniformity of MTJ types, not for memory.
+        # We decided that vectors are always densified. That is O(n) against the O(n^2) it
+        # costs to densify the matrix.
         v = v.todense()
     arr = np.asarray(v, dtype=float)
     if arr.ndim == 2 and 1 in arr.shape:
@@ -670,7 +666,7 @@ def as_vector(v, name: str = "alpha") -> np.ndarray:
 
 def as_square_matrix(M, name: str = "A") -> np.ndarray:
     """
-    [NEW] Convert `M` into a square 2-D float64 array.
+    Convert M into a square 2-D float64 array.
 
     It rejects SciPy sparse matrices with an explicit message.
     """
@@ -694,14 +690,15 @@ def as_square_matrix(M, name: str = "A") -> np.ndarray:
 
 def coerce_representation(alpha, A) -> Tuple[np.ndarray, np.ndarray, int]:
     """
-    [NEW] Convert and check the dimensional compatibility of (alpha, A).
+    Convert and check the dimensional compatibility of (alpha, A).
 
-    The returned arrays are always copies. ``np.asarray`` and ``.tocsr()``
+    The returned arrays are always copies. np.asarray and .tocsr()
     return the SAME object when the input already has the right type, so
     without the copy a variable would share memory with the caller's arrays
-    and change whenever the caller modified them. Java's constructors copy
-    (``new DenseMatrix(matrix)``), and the jphase tests check it after every
-    operation ("Matrix changed" / "Vector changed").
+    and change whenever the caller modified them. 
+    
+    In Java, the constructor of DenseMatrix copies the input array, so the
+    Python version mimics that behavior with the copy() calls.
 
     Returns
     -------
@@ -720,27 +717,21 @@ def coerce_representation(alpha, A) -> Tuple[np.ndarray, np.ndarray, int]:
 
 def _spectral_radius_lt_one(A, tol: float = EPS) -> bool:
     """
-    [NEW] Is sp(A) < 1, for A >= 0 with row sums <= 1? Decided exactly, from
-    the structure of A, without computing eigenvalues.
+    Check whether every phase can eventually reach absorption.
 
-    Call a phase "leaking" if its row sums to less than 1, that is, if it can
-    be absorbed in one step. Then
+    For a non-negative matrix with row sums at most 1, a row whose sum is
+    less than 1 represents a phase with a positive probability of being
+    absorbed in the next step. The function checks whether every other phase
+    can reach one of these "leaking" phases through a positive transition.
 
-        sp(A) < 1  <=>  from every phase, some leaking phase is reachable
-                        in the directed graph of A (edge i -> j iff A_ij > 0).
+    If this is true, the matrix is transient and its spectral radius is less
+    than 1. If a group of phases cannot reach a leaking phase, that group can
+    keep all its probability mass forever, so the spectral radius is 1.
 
-    (<=) If every phase reaches a leaking phase within n steps, every entry
-    of A^n 1 is < 1, so ||A^n||_inf < 1 and sp(A) < 1.
-    (=>) If some phase i cannot reach a leaking phase, the set R of phases
-    reachable from i is closed and its rows sum to 1, so A restricted to R is
-    stochastic and has eigenvalue 1.
+    The check uses a breadth-first search on the transition graph instead of
+    computing eigenvalues. This is more efficient for large sparse matrices.
 
-    This is the matrix form of "every phase is transient" (Latouche &
-    Ramaswami, 1999). It costs one breadth-first search, O(n + nnz), which
-    matters for large sparse matrices: in a bidiagonal Erlang-type A every
-    row but the last sums to 1, and computing sp(A) numerically there (one
-    eigenvalue of multiplicity n, a single Jordan block) is both slow and
-    badly conditioned.
+    The transience criterion follows Latouche and Ramaswami [2].
     """
     S = sparse.csr_array(A) if is_sparse(A) else sparse.csr_array(
         np.asarray(A, dtype=float))
@@ -765,10 +756,10 @@ def _spectral_radius_lt_one(A, tol: float = EPS) -> bool:
 
 def check_sub_stochastic_matrix(A, tol: float = EPS) -> bool:
     """
-    [NEW] Check that `A` is sub-stochastic and transient (DISCRETE case).
+    Check that `A` is sub-stochastic and transient (DISCRETE case).
 
     It does not exist in MatrixUtils.java: the Java side only provides
-    ``checkSubStochasticVector`` (for alpha) and ``checkSubGeneratorMatrix``
+    checkSubStochasticVector for alpha) and checkSubGeneratorMatrix
     (for the continuous case). The discrete matrix A is not validated in jphase.
 
     Conditions:
@@ -810,7 +801,7 @@ def check_sub_stochastic_matrix(A, tol: float = EPS) -> bool:
 
 def solve_power(M, k: int, v0=None) -> np.ndarray:
     """
-    [NEW] Compute M^{-k} v0 by solving k linear systems.
+    Compute M^{-k} v0 by solving k linear systems.
 
     It replaces the Java pattern
 
@@ -832,8 +823,7 @@ def solve_power(M, k: int, v0=None) -> np.ndarray:
     if k == 0:
         return v
     if is_sparse(M):
-        # Factorized ONCE and reused across the k solves; spsolve would
-        # refactorize on every call.
+        # Factorized ONCE and reused across the k solves
         lu = spla.splu(sparse.csc_array(M) if _is_sparray(M)
                        else sparse.csc_matrix(M))
         for _ in range(k):
@@ -847,7 +837,7 @@ def solve_power(M, k: int, v0=None) -> np.ndarray:
 
 def stirling_second(n: int, k: int) -> int:
     """
-    [NEW] Stirling number of the second kind, in exact integer arithmetic.
+    Stirling number of the second kind, in exact integer arithmetic.
 
         S(n, k) = (1/k!) sum_{j=0}^{k} (-1)^{k-j} C(k, j) j^n
     """
@@ -861,7 +851,7 @@ def stirling_second(n: int, k: int) -> int:
 
 def factorial_to_raw(factorial_moments: Sequence[float]) -> float:
     """
-    [NEW] Convert factorial moments into the raw moment of the same order.
+    Convert factorial moments into the raw moment of the same order.
 
         E[X^n] = sum_{k=1}^{n} S(n, k) * E[X(X-1)...(X-k+1)]
 
@@ -878,10 +868,10 @@ def factorial_to_raw(factorial_moments: Sequence[float]) -> float:
     Why this is needed
     ------------------
     In the DISCRETE case the closed form yields factorial moments, not raw ones.
-    ``AbstractDiscPhaseVar.moment(k)`` in Java returns the factorial moment but
-    ``variance()`` uses it as if it were raw, which makes jphase's discrete
-    variance incorrect (it is missing the +E[X] term). In the CONTINUOUS case
-    this does not apply: there, k! alpha (-A)^{-k} 1 really is the raw moment.
+    AbstractDiscPhaseVar.moment(k) in Java returns the factorial moment but
+    variance() uses it as if it were raw, which makes jphase's discrete
+    variance incorrect (it is missing the +E[X] term).
+
     """
     n = len(factorial_moments)
     if n == 0:
@@ -894,9 +884,9 @@ def factorial_to_raw(factorial_moments: Sequence[float]) -> float:
 def format_representation(title: str, alpha, A, matrix_name: str = "A",
                           stats: dict = None) -> str:
     """
-    [NEW] Multi-line textual description of a PH representation.
+    Multi-line textual description of a PH representation.
 
-    It is used by ``description()`` in both the continuous and the discrete
+    It is used by description() in both the continuous and the discrete
     case. In Java each abstract class builds its own string by hand.
     """
     alpha = as_vector(alpha, "alpha")
@@ -908,7 +898,6 @@ def format_representation(title: str, alpha, A, matrix_name: str = "A",
     if abs(a0) > EPS:
         lines.append(f"\talpha_0 (mass at absorption) = {a0:.4f}")
     if is_sparse(A) and n > 12:
-        # Not densified just to print it: a summary is shown instead.
         density = A.nnz / (n * n)
         lines.append(f"Matrix {matrix_name}: sparse {type(A).__name__}, "
                      f"nnz={A.nnz:,} ({density:.2%} density)")
