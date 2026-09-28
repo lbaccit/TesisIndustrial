@@ -5,30 +5,6 @@ Abstract class for discrete Phase-Type distributions.
 
 Migration of jphase.AbstractDiscPhaseVar from Java to Python.
 
-Theory
-------
-A DPH(alpha, A) is the number of steps until absorption of a discrete-time
-Markov chain with n transient phases and one absorbing phase, with transition
-matrix and initial distribution
-
-    P = [ A   a ]      a = 1 - A 1         (``get_mat0``)
-        [ 0   1 ]      alpha_0 = 1 - alpha 1   (``get_vec0``)
-
-The representation is valid when alpha >= 0, alpha 1 <= 1, A >= 0, A 1 <= 1
-and sp(A) < 1. The last condition is what makes every phase transient and
-I - A invertible.
-
-    pmf                P(X = 0) = alpha_0,   P(X = k) = alpha A^{k-1} a,  k >= 1
-    cdf                F(k) = 1 - alpha A^k 1
-    factorial moments  E[X(X-1)...(X-k+1)] = k! alpha (I-A)^{-k} A^{k-1} 1
-    mean               E[X] = alpha (I-A)^{-1} 1
-
-The closure operations (sum, mixture, minimum, maximum, and geometric and
-PH-distributed random sums) are documented method by method.
-
-References: Neuts (1981); Latouche & Ramaswami (1999); Bobbio, Horvath & Telek
-(2003); Telek & Heindl (2002); Perez & Riano (2006) for the jPhase design.
-
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
 Version: 1.0

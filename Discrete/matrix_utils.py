@@ -4,13 +4,6 @@ jmarkov/phase/matrix_utils.py
 Matrix utilities for the Phase-Type package, shared by the continuous (ctph)
 and discrete (dtph) cases.
 
-This is the counterpart of ``jphase/MatrixUtils.java`` in the original project:
-
-    jMarkov/src/jphase/MatrixUtils.java   ->   jmarkov/phase/matrix_utils.py
-
-Names are kept one to one, converted from camelCase to snake_case (PEP 8). Each
-function states in its docstring which Java method it comes from.
-
 Watch out for the import: there is also a ``jmarkov/matrix_utils.py`` at the
 root of the package (general purpose, it holds ``exp_unif``). They are two
 different modules:
@@ -18,42 +11,33 @@ different modules:
     from jmarkov.matrix_utils import exp_unif          # general purpose
     from jmarkov.phase.matrix_utils import mat_power   # this one
 
-About the Java overloads
-------------------------
-Many Java methods appear two or three times with different signatures. Most of
-those variants exist only because MTJ works with pre-allocated output matrices
-(the ``res`` parameter), not because they compute anything different. In NumPy
-that need disappears: ``kronecker(A, B, res)`` and ``kronecker(A, B)`` collapse
-into a single function. When two overloads really do differ (``matPower``, for
-instance), they are resolved with optional arguments.
 
-Not ported from MatrixUtils.java
+------------------------
+
+What is missing form the Java version
+
+There were uniformization functions in the matrix_utils.java but they are already implemented in jmarkov/matrix_utils.py 
+as exp_unif, together with its private helpers computeLdaMax and resultFromMedian.
+
+The direct matrix exponential was implemented using scipy.linalg.expm (same function as ctpy.py)
+In Python, we do not need to create a function called pow(x, n) because it is already implemented as x ** n. 
+As well as functions like OnesVector, concatRows, etc. that are already implemented in NumPy and SciPy.
 --------------------------------
-- ``exp``, ``expUnif``, ``expTimesOnes``: uniformization already lives in
-  ``jmarkov/matrix_utils.py`` as ``exp_unif``, together with its private
-  helpers ``computeLdaMax`` and ``resultFromMedian``. For the direct matrix
-  exponential we use ``scipy.linalg.expm``, which implements the Al-Mohy &
-  Higham (2009) algorithm, the same one cited in the comment in ``ctph.py``.
-- ``expRunge`` and its private helper ``runge4``: a fourth-order Runge-Kutta
-  integrator offered as an alternative to uniformization. Pending, in case we
-  want to reproduce Java's ``useUniformization = false`` flag.
-- ``pow(x, n)``: in Python this is ``x ** n``.
-- Overloads taking a pre-allocated output matrix (``kronecker(..., res)``,
-  ``OnesVector(Vector vec)``, ``concatRows(..., res)``, and so on): they exist
-  only because of how MTJ works and add nothing in NumPy.
 
 Dense vs. sparse
-----------------
-Functions that take matrices accept both dense ``np.ndarray`` and
-``scipy.sparse`` matrices, and dispatch internally. This mirrors what Java
-does: there, ``MatrixUtils`` operates on MTJ's ``Matrix`` interface, which both
-``DenseMatrix`` and ``FlexCompRowMatrix`` implement, which is why
-``SparseContPhaseVar`` and ``SparseDiscPhaseVar`` can reuse it. Python has no
-such common interface, so the dispatch is made explicit through ``is_sparse``.
 
-The ``dtype=float`` that appears throughout the code fixes the ELEMENT TYPE
-(float64 instead of int), not the density. What forces density is
-``np.asarray``, and for that reason it is only used on the dense branch.
+So that the functions that process matrices can be used in the dense and sparse cases, 
+we decided to implement a is_sparse, so that the functions can use the appropiate procedure based on the type of the matrix. 
+The functions that take matrices accept both dense ``np.ndarray`` and ``scipy.sparse`` matrices, and dispatch internally. 
+
+----------------
+Notes:
+
+There were a few functions with the same name, but different purposes. In Python, with NumPy and SciPy, 
+we can unify them into a single function with optional arguments. 
+For example, ``mat_power`` can now handle both the case of computing A^k and the case of computing l * A^k * r, 
+depending on whether the optional vectors are provided.
+
 
 VECTORS (alpha, the output vector) are always densified. This is a deliberate
 choice: they cost O(n) against the O(n^2) of the matrix, so the saving would be
@@ -61,19 +45,6 @@ marginal while complicating every downstream operation.
 
 What is at stake: a bidiagonal sub-generator with n = 10,000 takes 800 MB dense
 against 0.3 MB in CSR, a factor of 2,857x.
-
-Three traps that motivate the explicit dispatch, because they do NOT fail loudly
---------------------------------------------------------------------------------
-1. ``np.kron(sparse, sparse)`` returns a SILENTLY WRONG result: for two 2x2
-   matrices it hands back a 2x2 instead of the 4x4, that is, an element-wise
-   product by broadcasting rather than a Kronecker product.
-2. ``np.block([[sparse, ...]])`` returns a 2x2 array of sparse objects with
-   ``dtype=object``, not the assembled matrix.
-3. ``A ** k`` changes meaning between the two scipy APIs: on ``spmatrix``
-   (csr_matrix) it is MATRIX power, while on ``sparray`` (csr_array) it is
-   ELEMENT-WISE power, just as on ndarray. With csr_array, ``A ** 2`` returns
-   the squared entries and gives no warning. That is why ``mat_power``
-   multiplies explicitly on the sparse branch.
 
 Operation correspondence
 ------------------------
@@ -91,37 +62,28 @@ Operation correspondence
     scipy.linalg.expm(A)             scipy.sparse.linalg.expm(A)
 
 
-Three Java methods contain bugs that are NOT reproduced here. Each one is
-explained in the docstring of the corresponding function:
+Changes done from the original Java version **TO BE APPROVED BY JUAN FERNANDO** :
+There were some functions that we thought needed some changes because they had some errors:
+    1. The function "sumMatPower" was not saving the correct result of the intermediate matrix multiplication, 
+    so it was returning k * I instead of the sum of powers. We wrote the correct version below. 
+    2. The function "kroneckerMxRowVector" was calculating the output column using the number of columns of A 
+    instead of the size of b, so it was leaving some columns unfilled. We wrote the correct version below.
+    3. The function "checkSubGeneratorMatrix" is supposed to validate whether a matrix is a sub-generator, 
+    but the functions starts checking at j=1 so the first column is not checked. We wrote the correct version below.
+    4. The function "checkSubStochasticVector" was not checking whether the first entry of the vector was non-negative.
+    We wrote the correct version below.
 
-1. ``sumMatPower`` - does not accumulate the powers; it returns k*I. See
-   ``sum_mat_power``.
-2. ``kroneckerMxRowVector`` - wrong column stride. See
-   ``kronecker_mx_row_vector``.
-3. ``checkSubGeneratorMatrix`` - never inspects column 0, does not require
-   an exit to absorption, and accepts non-square matrices. See
-   ``check_sub_generator_matrix``.
-4. ``checkSubStochasticVector`` - never checks the sign of the first entry.
-   See ``check_sub_stochastic_vector``.
 
-1 and 2 are dead code inside jphase (nobody calls them); 3 and 4 are used,
-but the stricter versions only reject inputs that are invalid anyway, so
-fixing them should not break anything. Even so, it is worth confirming with the advisor before
-proposing changes to the Java side.
+Changes done on purpose ** TO BE APPROVED BY JUAN FERNANDO** : 
+    1. In the function "sumMatPower", when k < 1, the Java version prints a message and returns 0, 
+    while the Python version raises a ValueError.
+    2. In the function "CV(double[])", the Java version returns Var/mean^2, 
+    which is the SCV and not the CV. We checked in which parts in Java we used this function and we found that
+    it is used in the fitting algorithms EMHyperErlangFit.doFitHyperErlang(), where it is compared against PhaseVar.CV().
+    This method returns moment(2)/mean^2 - 1, which is the same SCV and the printing lines found say SCV(data) and SCV(variable)
+    Meaning that maybe we only need to change the name to SCV (We kept it the same as the Java version) and we added a CV_true just in case
+    we do want to use and calculate the CV.
 
-There are also two deliberate behavioural differences:
-
-- ``sumMatPower(k < 1)`` in Java prints a message and returns 0;
-  ``sum_mat_power`` raises ``ValueError``.
-- ``CV(double[])`` in Java returns Var/mean^2, which is the SCV and not the CV.
-  The name and the behaviour are kept in ``cv``, and ``cv_true`` is added.
-
-References
-----------
-[1] Neuts, M. F. (1981). Matrix-Geometric Solutions in Stochastic Models.
-[2] Latouche, G. & Ramaswami, V. (1999). Introduction to Matrix Analytic
-    Methods in Stochastic Modeling.
-[3] Al-Mohy, A. H. & Higham, N. J. (2009). SIAM J. Matrix Anal. Appl. 31(3).
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -136,16 +98,16 @@ from scipy import sparse
 from scipy.sparse import csgraph
 from scipy.sparse import linalg as spla
 
-# Numerical tolerance. Equivalent to the `Epsilon` constant in MatrixUtils.java.
+# Numerical tolerance (Epsilon in Java)
 EPS = 1.0e-10
 
 
 # =============================================================================
-# PART 1 - Ported from jphase.MatrixUtils
+# PART 1 - Functions directly from matrix_utils.java
 # =============================================================================
 
 def ones_vector(m: int) -> np.ndarray:
-    """1-D vector of ones. Java: ``OnesVector(int m)``."""
+    """Returns a one-dimensional vector of length m filled with ones. Java: ``OnesVector(int m)``."""
     return np.ones(m, dtype=float)
 
 
