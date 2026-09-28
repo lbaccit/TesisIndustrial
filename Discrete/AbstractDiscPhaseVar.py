@@ -5,41 +5,6 @@ Abstract class for discrete Phase-Type distributions.
 
 Migration of jphase.AbstractDiscPhaseVar from Java to Python.
 
-Theory
-------
-A DPH(alpha, A) is the number of steps until absorption of a discrete-time
-Markov chain with n transient phases and one absorbing phase, with transition
-matrix and initial distribution
-
-    P = [ A   a ]      a = 1 - A 1         (``get_mat0``)
-        [ 0   1 ]      alpha_0 = 1 - alpha 1   (``get_vec0``)
-
-The representation is valid when alpha >= 0, alpha 1 <= 1, A >= 0, A 1 <= 1
-and sp(A) < 1. The last condition is what makes every phase transient and
-I - A invertible.
-
-    pmf                P(X = 0) = alpha_0,   P(X = k) = alpha A^{k-1} a,  k >= 1
-    cdf                F(k) = 1 - alpha A^k 1
-    factorial moments  E[X(X-1)...(X-k+1)] = k! alpha (I-A)^{-k} A^{k-1} 1
-    mean               E[X] = alpha (I-A)^{-1} 1
-
-The closure operations (sum, mixture, minimum, maximum, and geometric and
-PH-distributed random sums) are documented method by method.
-
-References: Neuts (1981); Latouche & Ramaswami (1999); Bobbio, Horvath & Telek
-(2003); Telek & Heindl (2002); Perez & Riano (2006) for the jPhase design.
-
-Method order
-------------
-Methods below follow the order of ``AbstractDiscPhaseVar.java`` (sumPH first,
-then getVec0/getMat0, then the moments, then cdf/pmf, then quantil, then the
-remaining closure operations, then the string representation), so that this
-file can be read side by side with the Java original. Methods with no Java
-counterpart (``factorial_moment``, ``pmf_range``/``cdf_range``,
-``_build_result``, ``__repr__``/``__eq__``/``__hash__``, ``_check_index``)
-are placed next to the Java method that needed them, and the abstract methods
-(``copy``, ``new_var``) are kept last, as in the rest of this codebase.
-
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
 Version: 1.0
@@ -130,7 +95,7 @@ class AbstractDiscretePhaseType(ABC):
 
         if not check_sub_stochastic_vector(self._alpha):
             raise ValueError(
-                "'alpha' is not a valid defective probability vector: "
+                "'alpha' is not a valid probability vector: "
                 "alpha_i >= 0 and sum(alpha) <= 1 are required. "
                 f"Got sum(alpha) = {self._alpha.sum():.6g}."
             )
@@ -164,6 +129,8 @@ class AbstractDiscretePhaseType(ABC):
         Sub-stochastic matrix.
 
         Java: ``getMatrixArray()``, for the same reason as ``alpha`` above.
+        a_i is the probability of being absorbed in one step from phase i.
+        Java: getMat0().
         """
         return self._A.copy()
 
@@ -176,6 +143,7 @@ class AbstractDiscretePhaseType(ABC):
     # -------------------------------------------------------------------
 
     def sum_ph(self, counter: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        Java: getVec0().
         """
         Sum of a Phase-type-distributed number of iid copies of this
         variable.
@@ -268,6 +236,7 @@ class AbstractDiscretePhaseType(ABC):
     # `alpha`, `A` (above) and `get_mat0()` already return np.ndarray.
 
     def mean(self) -> float:
+        For k = 0 it reduces to alpha_0, consistent with pmf(0).
         """
         Expected value E[X].
 
@@ -334,11 +303,14 @@ class AbstractDiscretePhaseType(ABC):
         This is exactly what ``AbstractDiscPhaseVar.moment(k)`` computes in
         Java - see the note in ``moment`` below for why it is split out into
         its own method here instead of being called ``moment`` directly.
+        This is the moment that comes out in closed form for a DPH; the raw
+        moments E[X^k] are derived from these (see ``moment``).
+
+        Java: AbstractDiscPhaseVar.moment(k)
         """
         if k < 1:
             raise ValueError(f"k must be >= 1; got {k}.")
-        # A^{k-1} 1, then (I - A)^{-k} applied k times. (I-A)^{-1} and A commute
-        # (both are polynomials in A), so the order is free.
+        # A^{k-1} 1, then (I - A)^{-k} applied k times. (I-A)^{-1} and A commute, so the order does not matter.
         v = mat_power(self._A, k - 1) @ ones_vector(self.n_phases)
         I_minus_A = eye_like(self._A) - self._A
         v = solve_power(I_minus_A, k, v)
@@ -360,6 +332,11 @@ class AbstractDiscretePhaseType(ABC):
         ``variance()`` and ``CV()`` there use it as if it were raw. For k = 1
         they coincide; for k >= 2 they do not. Example with Geometric(0.5) -
         alpha = [1], A = [[0.5]]:
+        Note **TO BE APPROVED BY JUAN FERNANDO**: 
+        AbstractDiscPhaseVar.moment(k) in Java returns the FACTORIAL moment,
+        not the raw one, even though variance() and CV() there use it as
+        if it were raw. For k = 1 they coincide; for k >= 2 they do not. Example
+        with Geometric(0.5) - alpha = [1], A = [[0.5]]:
 
             E[X]        = 2      (Java and Python agree)
             E[X(X-1)]   = 4      (Java moment(2) = our factorial_moment(2))
@@ -367,8 +344,6 @@ class AbstractDiscretePhaseType(ABC):
             True Var    = 2
             Java var()  = 4 - 2^2 = 0      <-- incorrect
 
-        If you need to reproduce Java bit for bit during validation, use
-        ``factorial_moment(k)``. This point is worth raising with the advisor.
         """
         if k < 1:
             raise ValueError(f"k must be >= 1; got {k}.")
@@ -455,6 +430,9 @@ class AbstractDiscretePhaseType(ABC):
         return res
 
     def prob(self, a: int, b: int) -> float:
+        Note: AbstractDiscPhaseVar.CV() in Java computes moment(2)/m^2 - 1,
+        which is the form of the SCV and with
+        the factorial moment instead of the raw one.
         """
         P(a < X <= b) = F(b) - F(a). Returns 0.0 if b <= a.
 
@@ -485,7 +463,7 @@ class AbstractDiscretePhaseType(ABC):
         """
         Quantile of order p: the smallest k with F(k) >= p.
 
-        Java: ``quantil(double p)``.
+        Java: quantil(double p).
 
         Parameters
         ----------
@@ -499,17 +477,16 @@ class AbstractDiscretePhaseType(ABC):
         -------
         int
 
-        Divergence from Java
-        --------------------
-        ``quantil`` in Java applies Newton-Raphson using ``pmf`` as if it were
-        the derivative of ``cdf``, that is, it treats a step function as if it
-        were differentiable. Worse: if it does not converge within 100
-        iterations it returns ``0.0`` instead of reporting a failure. With a
-        Geometric(0.5) that happens for p = 0.9, 0.95 and 0.99, where the
+        Changes from Java ** TO BE APPROVED BY JUAN FERNANDO **: 
+        quantil in Java applies Newton-Raphson using pmf as if it were
+        the derivative of cdf, that is, it treats a step function as if it
+        were differentiable. After 100 iterations,it does not converge 
+        and returns ``0.0`` instead of reporting a failure. 
+        Example: With a Geometric(0.5) that happens for p = 0.9, 0.95 and 0.99, where the
         correct answers are 4, 5 and 7.
 
         For a discrete variable the quantile follows from the definition by
-        accumulating the pmf, which is also exact. That is what is done here.
+        accumulating the pmf. 
         """
         if not 0.0 < p <= 1.0:
             raise ValueError(f"'p' must be in (0, 1]; got {p}.")
@@ -536,26 +513,26 @@ class AbstractDiscretePhaseType(ABC):
     # Closure operations: sum, sum_geom, mix, min, max
     #
     # Each of these builds a new DPH variable representing some operation on
-    # independent random variables (a sum, a mixture, a minimum, ...). Java
-    # exposes two overloads per operation: one that receives an already
-    # allocated ``res`` container (built through ``newVar`` and filled in
-    # place with ``setVector``/``setMatrix``), and one that allocates it
-    # itself. That pattern exists because MTJ's ``Matrix``/``Vector`` are
-    # mutable containers meant to be preallocated; NumPy arrays are plain
-    # values, so there is nothing to preallocate. Only the single-result form
-    # is implemented here; ``_build_result`` plays the role of
-    # ``newVar + setVector + setMatrix`` combined.
+    # independent random variables (a sum, a mixture, a minimum, ...). 
+    # In Java the matrices and vectors are mutable containers so they need to 
+    # be preallocated and filled in place. In Python the matrices and vectors are immutable values, 
+    # so they are built in one go.
+    # Only the single-result form is implemented here; 
+    # _build_result plays the role of
+    # newVar + setVector + setMatrix combined.
     # -------------------------------------------------------------------
 
     def _build_result(self, alpha, A) -> "AbstractDiscretePhaseType":
         """
         [NEW, no Java method] Build a variable of the same concrete class as
         ``self`` from a computed ``(alpha, A)`` pair.
+        Build a variable of the same concrete class as self from a
+        computed (alpha, A) pair.
 
         Arithmetic that mixes a dense and a sparse operand (e.g. a Dense
-        variable combined with a Sparse one in ``min``/``max``/``sum``) can
+        variable combined with a Sparse one in min/max/sum) can
         land on either storage depending on the matrices involved. This
-        forces the result back to dense when ``self`` is a Dense variable;
+        forces the result back to dense when self is a Dense variable;
         the Sparse constructor already sparsifies whatever comes in, so
         nothing extra is needed on that side.
         """
@@ -565,22 +542,23 @@ class AbstractDiscretePhaseType(ABC):
 
     def sum(self, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
         """
-        Sum of two independent variables: ``self + other``.
+        Sum of two independent variables: self + other.
 
-        Java: ``sum(DiscPhaseVar B)``.
+        Java: sum(DiscPhaseVar B).
 
             vec1_0    = P(self = 0)
+            beta      = other._alpha
             alpha_res = concat(alpha, beta * vec1_0)
             A_res     = [ A                  mat0(self) (x) beta ]
                         [ 0                  B                   ]
 
-        Runs ``self``'s phase process first; once it absorbs (from phase i,
-        with probability ``mat0(self)_i``) it jumps straight into ``other``'s
-        initial distribution to continue running ``other``. If ``self`` was
-        already absorbed at time 0 (``vec1_0 > 0``), the sum starts running
-        ``other`` right away instead, weighted by that probability.
+        Runs self's phase process first; once it absorbs (from phase i,
+        with probability mat0(self)_i) it jumps straight into other's
+        initial distribution to continue running other. If self was
+        already absorbed at time 0 (vec1_0 > 0), the sum starts running
+        other right away instead, weighted by that probability.
 
-        If either variable is identically 0 (``alpha`` entirely zero), the
+        If either variable is identically 0 (alpha entirely zero), the
         sum is just the other variable unchanged - matching Java's
         degenerate-case shortcut, which returns the same object rather than a
         copy.
@@ -604,7 +582,7 @@ class AbstractDiscretePhaseType(ABC):
         Sum of a Geometric(p)-distributed number of iid copies of this
         variable (the geometric variable is supported on {1, 2, 3, ...}).
 
-        Java: ``sumGeom(double p)``.
+        Java: sumGeom(double p).
 
         With N ~ Geometric(p), P(N = n) = p (1-p)^{n-1}, and c = 1 / (1 -
         (1-p) alpha_0):
@@ -616,18 +594,18 @@ class AbstractDiscretePhaseType(ABC):
         A new copy may itself be 0 (probability alpha_0), in which case it
         is over immediately and the (1-p) decision is taken again. The factor
         c = sum_{m>=0} ((1-p) alpha_0)^m adds up those chains of zero-length
-        copies. It is the 1-phase case of ``sum_ph``: a Geometric(p) counter
+        copies. It is the 1-phase case of sum_ph: a Geometric(p) counter
         is DPH(beta=[1], S=[[1-p]]), and then M = (1 - alpha_0 (1-p))^{-1} = c.
 
-        Divergence from Java
-        --------------------
-        Java returns ``alpha_res = alpha`` and ``A_res = A + (1-p) a alpha``,
+        Change from Java: 
+
+        Java returns alpha_res = alpha and A_res = A + (1-p) a alpha,
         without the factor c. That is only exact when alpha_0 = 0. With
         alpha_0 > 0 it assigns no probability to the chains of zero-length
         copies. Example: X with alpha = [0.5, 0.2] (alpha_0 = 0.3) and p =
         0.3 differs from the brute-force compound sum by 0.19 in the pmf. The
-        continuous ``AbstractContPhaseVar.sumGeom`` uses the same formula, and
-        its reference test (``DenseContClosureTest.testSumGeom``, with alpha_0
+        continuous AbstractContPhaseVar.sumGeom uses the same formula, and
+        its reference test (DenseContClosureTest.testSumGeom, with alpha_0
         = 0.5) was computed with that formula too.
         """
         if not 0.0 < p <= 1.0:
