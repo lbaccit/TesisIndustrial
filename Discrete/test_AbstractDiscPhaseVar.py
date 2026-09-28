@@ -6,8 +6,7 @@ implementation (the abstract class cannot be instantiated on its own).
 
 Where this file fits
 --------------------
-jMarkov (Java) has NO tests for the discrete Phase-Type variable, only the
-continuous DenseCont{Prob,Moment,Closure}Test.java and their Sparse twins.
+jMarkov (Java) has NO tests for the discrete Phase-Type variable.
 The files test_{Dense,Sparse}Disc{Prob,Moment,Closure}.py mirror those six
 Java tests one to one (and check the discrete fixtures against Java's own
 continuous reference values through uniformization).

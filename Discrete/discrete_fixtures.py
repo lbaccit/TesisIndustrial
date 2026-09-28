@@ -1,13 +1,8 @@
 """
 discrete_fixtures.py
 
-Discrete Phase-Type variables used by the test suite, mirroring the fixtures
-of jMarkov's own jphase tests.
-
-jMarkov only has tests for the CONTINUOUS case (``DenseContProbTest``,
-``DenseContMomentTest``, ``DenseContClosureTest`` and their Sparse twins in
-``jMarkov/test/jphase/``). To keep the discrete suite structurally identical,
-each continuous fixture T (a sub-generator) is turned into a discrete one by
+Discrete Phase-Type variables used by the test suite. Each continuous fixture
+T (a sub-generator) is turned into a discrete one by
 uniformization,
 
     A = I + T / lambda,        lambda = max_i |T_ii|,
@@ -15,17 +10,13 @@ uniformization,
 which is the standard link between continuous- and discrete-time chains
 (Latouche & Ramaswami, 1999). A is non-negative, its rows sum to 1 + (T 1)_i /
 lambda <= 1, and it leaks exactly from the phases where T leaks, so it is a
-valid transient sub-stochastic matrix with the same structure as T. The
-initial vectors are Java's, unchanged (several have alpha_0 > 0, a mass at 0,
-which is exactly the case the closure formulas have to handle).
+valid transient sub-stochastic matrix with the same structure as T.
 
-``CLOSURE_VECTOR_D``/``CLOSURE_MATRIX_D`` need no conversion: it is the
-discrete variable that ``DenseContClosureTest`` itself builds
-(``DenseDiscPhaseVar(vectorD, matrixD)``) for ``testSumPH``.
+CLOSURE_VECTOR_D/CLOSURE_MATRIX_D are already discrete fixtures.
 
 Every value is a decimal literal with an exact rational meaning, so
-``generate_reference_values.py`` can rebuild the same matrices in exact
-arithmetic with ``fractions.Fraction``.
+generate_reference_values.py can rebuild the same matrices in exact
+arithmetic with fractions.Fraction.
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -48,7 +39,7 @@ def uniformize(T, lam, exact: bool = False):
 
 
 # -----------------------------------------------------------------------------
-# DenseContProbTest.java: matrix1/vector1, matrix2/vector2, matrix3/vector3
+# Continuous reference fixtures used for uniformization
 # -----------------------------------------------------------------------------
 
 PROB_T1 = [[-2, 2],
@@ -80,7 +71,7 @@ PROB_LAMBDA3 = 0.1
 PROB_VECTOR3 = [1, 0, 0, 0]
 
 # -----------------------------------------------------------------------------
-# DenseContMomentTest.java: matrix/vector
+# Moment reference fixture
 # -----------------------------------------------------------------------------
 
 MOMENT_T = [
@@ -100,7 +91,7 @@ MOMENT_LAMBDA = 10
 MOMENT_VECTOR = [0.02, 0.04, 0.04, 0.04, 0.08, 0.08, 0.1, 0.2, 0.04, 0.08, 0.08]
 
 # -----------------------------------------------------------------------------
-# DenseContClosureTest.java: matrix1/vector1, matrix2/vector2, matrixD/vectorD
+# Closure reference fixtures
 # -----------------------------------------------------------------------------
 
 CLOSURE_T1 = [[-2, 2],
@@ -118,7 +109,7 @@ CLOSURE_MATRIX_D = [[0.76, 0.24],
                     [0, 0.76]]
 CLOSURE_VECTOR_D = [0.15, 0.85]
 
-# Parameters used by DenseContClosureTest: mix(0.2, ...) and sumGeom(0.2).
+# Parameters used by the closure tests.
 MIX_P = 0.2
 SUM_GEOM_P = 0.2
 

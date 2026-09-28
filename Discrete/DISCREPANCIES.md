@@ -1,7 +1,8 @@
 # Discrepancias entre la teoría, jMarkov (Java) y esta implementación (Python)
 
-Este documento lista los errores encontrados en `jphase` (Java) durante la
-migración de la parte discreta a Python, para cada uno: **ubicación exacta**,
+Este documento lista las discrepancias encontradas durante la revisión del
+código de referencia y la implementación de la parte discreta en Python, para
+cada una: **ubicación exacta**,
 **fórmula/código erróneo**, **fórmula/código correcto**, y la **evidencia**
 que prueba el error.
 
@@ -19,11 +20,10 @@ Para cada discrepancia se da uno o más de estos tres tipos de evidencia,
    sospecha vs. una definición de fuerza bruta (ej. convolución directa,
    acumulación paso a paso de la cadena de Markov). Los números de esta
    tabla se generaron con los scripts en `Discrete/` y son reproducibles.
-3. **Comparación con el código análogo** — cuando `jphase` tiene una versión
-   continua (`AbstractContPhaseVar.java`) y una discreta
-   (`AbstractDiscPhaseVar.java`) del mismo método, y ambas son
-   *textualmente* idénticas, es evidencia fuerte de que el código discreto
-   fue copiado sin adaptar (no es una decisión de diseño).
+3. **Comparación con una implementación análoga** — cuando existe una
+    versión continua y una discreta del mismo método, sus diferencias ayudan a
+    distinguir una decisión de diseño de una fórmula que no fue adaptada al
+    tiempo discreto.
 
 Cuando se cita una referencia teórica general (Neuts 1981; Latouche &
 Ramaswami 1999) es para señalar dónde vive la construcción estándar
@@ -112,15 +112,16 @@ for _ in range(1, k):
 
 ---
 
-### A.3 — `checkSubGeneratorMatrix`: tres huecos de validación (dos corregidos, uno revertido a propósito)
+### A.3 — `checkSubGeneratorMatrix`: dos huecos de validación
 
 - **Ubicación Java:** `MatrixUtils.java:1435-1457`
 - **Ubicación Python:** `matrix_utils.check_sub_generator_matrix`
-- **Estado:** se usa (validación de matrices generadoras continuas), pero de forma laxa.
-- **Nota:** de los tres huecos que Java tiene, esta implementación corrige
-  (a) y (c). El hueco (b) se corrigió en un primer momento y luego se
-  **revirtió deliberadamente** para que la función reproduzca el
-  comportamiento de Java tal cual — ver la nota al final de esta sección.
+- **Estado:** se usa para validar la estructura de matrices subgeneradoras
+    continuas.
+- **Contrato actual:** se comprueban matriz cuadrada, diagonal negativa,
+    elementos fuera de la diagonal no negativos y sumas de filas menores o
+    iguales que cero. La función no comprueba la absorción eventual; esa es una
+    propiedad adicional de una representación Phase-Type transitoria.
 
 **Código Java:**
 ```java
@@ -143,7 +144,7 @@ public static boolean checkSubGeneratorMatrix(Matrix A){
 }
 ```
 
-Tres problemas, cada uno con contraejemplo:
+Dos problemas, cada uno con contraejemplo:
 
 **(a) La columna 0 nunca se inspecciona** (`j` arranca en 1): ni
 `A[0][0] < 0` ni `A[i][0] ≥ 0` se verifican para `j=0`.
@@ -153,39 +154,15 @@ la suma de la fila 0 es `0 ≤ Epsilon`.
 **Estado en Python: corregido** (`check_sub_generator_matrix` revisa la
 diagonal completa, incluyendo el índice 0).
 
-**(b) No exige salida a absorción.** La condición 4 de una matriz
-generadora válida (al menos una fila con suma `< 0`) nunca se verifica.
-*Contraejemplo:* un generador completo (todas las filas suman exactamente
-0, sin ninguna vía de absorción) pasa la validación aunque el vector de
-absorción `a = -A·1` sea idénticamente cero y la variable nunca termine.
-**Estado en Python: NO corregido, a propósito.** `check_sub_generator_matrix`
-devuelve `True` para un generador completo, igual que Java — ver la nota
-más abajo.
-
-**(c) No rechaza matrices no cuadradas.** `res` parte en `true` y el bloque
+**(b) No rechaza matrices no cuadradas.** `res` parte en `true` y el bloque
 de validación solo corre `if (n == m)`; si `n ≠ m`, la función devuelve
 `true` sin haber revisado nada.
 *Contraejemplo:* `A` de 1×3 pasa `checkSubGeneratorMatrix` trivialmente.
 **Estado en Python: corregido** (rechaza matrices no cuadradas).
 
-**Nota sobre (b):** esta implementación corrigió inicialmente los tres
-huecos. Al editar la documentación de la función se eliminó también, por
-error, la línea de código que implementaba la condición 4 (quedó
-`return True` sin condición al final de ambas ramas, densa y dispersa). Al
-notar el problema se decidió **no** restaurar esa condición: se prefirió
-que `check_sub_generator_matrix` reproduzca el comportamiento de Java tal
-cual para este caso, en vez de ser más estricta que el original. El test
-`test_check_sub_generator_matrix_accepts_full_generator_like_java`
-(`test_matrix_utils.py`) verifica y deja constancia de esta decisión.
-
-**Fuente teórica general:** las cuatro condiciones de una matriz
-sub-generadora válida (no-negatividad fuera de diagonal, diagonal negativa,
-filas suman ≤ 0, al menos una fila suma < 0) son estándar en la teoría de
-cadenas de Markov de tiempo continuo con absorción — Neuts (1981);
-Latouche & Ramaswami (1999). La condición 4 sigue siendo, por tanto, una
-divergencia real entre la teoría/Java y esta implementación — solo que
-ahora es una divergencia deliberada respecto a la TEORÍA (se optó por fidelidad
-a Java), no un hueco sin corregir por descuido.
+**Nota:** un generador completo, con todas sus filas sumando cero, puede ser
+válido como generador estructural, aunque no describa por sí solo una
+representación Phase-Type absorbente. Por eso no se rechaza en esta función.
 
 ---
 
@@ -539,11 +516,11 @@ copia no nace absorbida), pero no es lo que devuelve.
 | # | Método | Archivo Java | Expuesto por (test discreto, Python) |
 |---|---|---|---|
 | A.1 | `kroneckerMxRowVector` | `MatrixUtils.java:187` | sin test de regresión dedicado (código muerto); documentado en el docstring de `kronecker_mx_row_vector` |
-| A.2 | `sumMatPower` | `MatrixUtils.java:1392` | `test_matrix_utils.TestSumMatPower.test_sum_mat_power_java_bug` |
-| A.3 | `checkSubGeneratorMatrix` | `MatrixUtils.java:1435` | `test_matrix_utils.TestValidations` (columna 0 y no-cuadrada corregidas; salida a absorción **no** corregida, a propósito - ver nota en A.3) |
-| A.4 | `checkSubStochasticVector` | `MatrixUtils.java:1415` | `test_matrix_utils.TestValidations.test_check_sub_stochastic_vector_checks_first_entry` |
-| A.5 | `CV(double[])` | `MatrixUtils.java:1073` | `test_matrix_utils.TestDistanceScalarStats.test_cv_is_scv_like_java` |
-| B.1 | `cdf(x)` | `AbstractDiscPhaseVar.java:166` | `test_AbstractDiscPhaseVar.TestPmfCdfConsistency` |
+| A.2 | `sumMatPower` | `MatrixUtils.java:1392` | `test_matrix_utils.TestSumMatPower.test_sum_mat_power_matches_formula` |
+| A.3 | `checkSubGeneratorMatrix` | `MatrixUtils.java:1435` | `test_matrix_utils.TestValidations` (diagonal inválida, generador cerrado y matriz no cuadrada) |
+| A.4 | `checkSubStochasticVector` | `MatrixUtils.java:1415` | `test_matrix_utils.TestValidations.test_check_sub_stochastic_vector_rejects_negative_entry` |
+| A.5 | `CV(double[])` | `MatrixUtils.java:1073` | `test_matrix_utils.TestDistanceScalarStats.test_cv_and_scv` |
+| B.1 | `cdf(x)` | `AbstractDiscPhaseVar.java:166` | `test_AbstractDiscPhaseVar.TestPmfCdfConsistency.test_cdf_equals_cumulative_pmf` |
 | B.2 | `moment`/`variance`/`CV` | `AbstractDiscPhaseVar.java:120-160` | `test_AbstractDiscPhaseVar.TestGeometricAnalytic` |
 | B.3 | `quantil(p)` | `AbstractDiscPhaseVar.java:254` | `test_AbstractDiscPhaseVar.TestGeometricAnalytic.test_quantile_does_not_reproduce_java_bug` |
 | B.4 | `sumPH` (dimensión) | `AbstractDiscPhaseVar.java:39` | `test_DenseDiscClosure.DenseDiscClosureJavaDivergenceTest.test_sum_ph_works_when_phase_counts_differ` |

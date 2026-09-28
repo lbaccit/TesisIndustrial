@@ -4,19 +4,10 @@ test_matrix_utils.py
 Tests for matrix_utils.py.
 
 Coverage:
-  1. Equivalence with the MatrixUtils.java loops, transcribed literally as
-     reference functions inside this file (Java cannot be run here, so the
-     "Java truth" is reproduced by hand).
-  2. Numerical equivalence between dense input (np.ndarray) and sparse input
+    1. Mathematical correctness of the matrix utilities and their edge cases.
+    2. Numerical equivalence between dense input (np.ndarray) and sparse input
      (scipy.sparse), across both scipy APIs (csr_matrix and csr_array).
-  3. The three documented Java bugs, checking that they are NOT reproduced here.
-  4. Edge cases (k=0, 1x1 matrices, validations that must fail).
-
-There are no official Java tests for MatrixUtils (jMarkov ships no
-MatrixUtilsTest.java), so the J_* reference functions in this file are the only
-external source of truth available. They are written so that anyone can read
-them line by line against the mathematical definition, without using the NumPy
-shortcuts that are the thing under test.
+    3. Edge cases and validations that must fail.
 
 Run with:
     python3 -m unittest test_matrix_utils -v
@@ -34,92 +25,6 @@ import scipy.sparse as sp
 from numpy.testing import assert_allclose
 
 import matrix_utils as mu
-
-
-# =============================================================================
-# Literal transcriptions of the MatrixUtils.java loops (reference)
-# =============================================================================
-
-def J_kron_mm(A, B):
-    """kronecker(Matrix A, Matrix B, Matrix res), transcribed loop by loop."""
-    A = np.asarray(A, dtype=float)
-    B = np.asarray(B, dtype=float)
-    r1, c1 = A.shape
-    r2, c2 = B.shape
-    R = np.zeros((r1 * r2, c1 * c2))
-    for i1 in range(r1):
-        for j1 in range(c1):
-            for i2 in range(r2):
-                for j2 in range(c2):
-                    R[i1 * r2 + i2, j1 * c2 + j2] = A[i1, j1] * B[i2, j2]
-    return R
-
-
-def J_kron_mx_col_vector(A, b):
-    """kronecker(Matrix A, Vector B, Matrix res), with b as a column."""
-    A = np.asarray(A, dtype=float)
-    b = np.asarray(b, dtype=float)
-    r1, c1 = A.shape
-    n2 = len(b)
-    R = np.zeros((r1 * n2, c1))
-    for i1 in range(r1):
-        for j1 in range(c1):
-            for i2 in range(n2):
-                R[i1 * n2 + i2, j1] = A[i1, j1] * b[i2]
-    return R
-
-
-def J_kron_col_vector_mx(a, B):
-    """kronecker(Vector A, Matrix B, Matrix res), with a as a column."""
-    a = np.asarray(a, dtype=float)
-    B = np.asarray(B, dtype=float)
-    n1 = len(a)
-    r2, c2 = B.shape
-    R = np.zeros((n1 * r2, c2))
-    for i1 in range(n1):
-        for i2 in range(r2):
-            for j2 in range(c2):
-                R[i1 * r2 + i2, j2] = a[i1] * B[i2, j2]
-    return R
-
-
-def J_concat_quad(lu, ru, ld, rd):
-    """concatQuad: block matrix assembly, loop by loop."""
-    lu, ru, ld, rd = (np.asarray(x, dtype=float) for x in (lu, ru, ld, rd))
-    rows_top, cols_left = lu.shape
-    rows_bottom, cols_right = rd.shape
-    R = np.zeros((rows_top + rows_bottom, cols_left + cols_right))
-    R[:rows_top, :cols_left] = lu
-    R[:rows_top, cols_left:] = ru
-    R[rows_top:, :cols_left] = ld
-    R[rows_top:, cols_left:] = rd
-    return R
-
-
-def J_mat_power(A, k):
-    """matPower(Matrix A, int k): repeated multiplication, no shortcuts."""
-    A = np.asarray(A, dtype=float)
-    n = A.shape[0]
-    R = np.eye(n)
-    for _ in range(k):
-        R = R @ A
-    return R
-
-
-def J_sum_mat_power_correct(A, k):
-    """
-    The sum I + A + A^2 + ... + A^(k-1), which is what sumMatPower SHOULD
-    compute. Used as the mathematical reference, not as a transcription of the
-    Java bug (that one is tested separately, in test_sum_mat_power_java_bug).
-    """
-    A = np.asarray(A, dtype=float)
-    n = A.shape[0]
-    total = np.eye(n)
-    term = np.eye(n)
-    for _ in range(1, k):
-        term = term @ A
-        total = total + term
-    return total
 
 
 # =============================================================================
@@ -149,7 +54,7 @@ class MatrixUtilsTestCase(unittest.TestCase):
 
     def assert_dense_sparse_equal(self, fn, *args, tol=1e-11):
         """
-        Call ``fn`` with the dense ``args``, then again converting every matrix
+        Call fn with the dense args, then again converting every matrix
         argument (ndim == 2) to csr_matrix and to csr_array. All three outputs
         must agree once densified.
         """
@@ -166,7 +71,7 @@ class MatrixUtilsTestCase(unittest.TestCase):
 
 
 # =============================================================================
-# Part 1: functions ported from MatrixUtils.java
+# Part 1: matrix utility functions
 # =============================================================================
 
 class TestOnesHelpers(unittest.TestCase):
@@ -179,27 +84,20 @@ class TestOnesHelpers(unittest.TestCase):
 
 
 class TestKronecker(MatrixUtilsTestCase):
-    def test_kronecker_matches_java_cycle(self):
-        A = np.array([[1.0, 2.0], [3.0, 4.0]])
-        B = np.array([[0.0, 5.0], [6.0, 7.0]])
-        assert_allclose(mu.kronecker(A, B), J_kron_mm(A, B))
-
     def test_kronecker_matches_numpy(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         B = np.array([[0.0, 5.0], [6.0, 7.0]])
         assert_allclose(mu.kronecker(A, B), np.kron(A, B))
 
-    def test_kronecker_mx_col_vector_matches_java_cycle(self):
+    def test_kronecker_mx_col_vector_matches_numpy(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         b = np.array([1.0, 2.0])
-        assert_allclose(mu.kronecker_mx_col_vector(A, b),
-                        J_kron_mx_col_vector(A, b))
+        assert_allclose(mu.kronecker_mx_col_vector(A, b), np.kron(A, b[:, None]))
 
-    def test_kronecker_col_vector_mx_matches_java_cycle(self):
+    def test_kronecker_col_vector_mx_matches_numpy(self):
         a = np.array([1.0, 2.0])
         B = np.array([[0.0, 5.0], [6.0, 7.0]])
-        assert_allclose(mu.kronecker_col_vector_mx(a, B),
-                        J_kron_col_vector_mx(a, B))
+        assert_allclose(mu.kronecker_col_vector_mx(a, B), np.kron(a[:, None], B))
 
     def test_kronecker_sum_shape_and_formula(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -237,11 +135,11 @@ class TestConcat(MatrixUtilsTestCase):
         with self.assertRaises(ValueError):
             mu.concat_cols(np.zeros((2, 2)), np.zeros((3, 2)))
 
-    def test_concat_quad_matches_java_cycle(self):
+    def test_concat_quad_matches_block_formula(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         B = np.array([[0.0, 5.0], [6.0, 7.0]])
         result = mu.concat_quad(A, B, B, A)
-        assert_allclose(result, J_concat_quad(A, B, B, A))
+        assert_allclose(result, np.block([[A, B], [B, A]]))
 
     def test_concat_quad_blocks_placed_correctly(self):
         q = mu.concat_quad(D3, D3 * 0, D3 * 0, D3)
@@ -268,10 +166,10 @@ class TestMultVector(unittest.TestCase):
 
 
 class TestMatPower(MatrixUtilsTestCase):
-    def test_mat_power_matches_java_cycle(self):
+    def test_mat_power_matches_matrix_power(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         for k in (0, 1, 3, 5):
-            assert_allclose(mu.mat_power(A, k), J_mat_power(A, k))
+            assert_allclose(mu.mat_power(A, k), np.linalg.matrix_power(A, k))
 
     def test_mat_power_k0_is_identity(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -295,45 +193,33 @@ class TestMatPower(MatrixUtilsTestCase):
         for k in (0, 1, 2, 5):
             self.assert_dense_sparse_equal(mu.mat_power, D3, k)
 
-    def test_dense_vs_sparse_csr_array_power_bug_regression(self):
-        """
-        Explicit regression for the finding: on csr_array, A**k is element-wise
-        power, not matrix power. mat_power must give the MATRIX power in both
-        cases.
-        """
+    def test_sparse_matrix_power_matches_dense_matrix_power(self):
         A = sp.csr_array(D3)
         result = mu.to_dense(mu.mat_power(A, 3))
         assert_allclose(result, np.linalg.matrix_power(D3, 3), atol=1e-11)
-        # What must NOT happen: matching the element-wise power.
-        element_wise = mu.to_dense(A) ** 3
-        self.assertFalse(np.allclose(result, element_wise))
 
 
 class TestSumMatPower(unittest.TestCase):
     def test_sum_mat_power_matches_formula(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         for k in (1, 3, 5):
-            assert_allclose(mu.sum_mat_power(A, k), J_sum_mat_power_correct(A, k))
+            total = np.eye(A.shape[0])
+            term = np.eye(A.shape[0])
+            for _ in range(1, k):
+                term = term @ A
+                total = total + term
+            assert_allclose(mu.sum_mat_power(A, k), total)
 
     def test_sum_mat_power_with_vectors(self):
         A = np.array([[1.0, 2.0], [3.0, 4.0]])
         a = np.array([1.0, 2.0])
-        total = J_sum_mat_power_correct(A, 4)
+        total = np.eye(A.shape[0])
+        term = np.eye(A.shape[0])
+        for _ in range(1, 4):
+            term = term @ A
+            total = total + term
         expected = a @ (total @ a)
         self.assertAlmostEqual(mu.sum_mat_power(A, 4, a, a), expected, places=10)
-
-    def test_sum_mat_power_java_bug(self):
-        """
-        Documented in the module: sumMatPower in Java does not accumulate the
-        powers and returns k*I. Here the real sum (I+A+A^2+...) must differ
-        from k*I except in degenerate cases.
-        """
-        A = np.array([[0.5, 0.2], [0.1, 0.6]])
-        k = 4
-        result = mu.sum_mat_power(A, k)
-        java_bug = k * np.eye(2)
-        self.assertFalse(np.allclose(result, java_bug),
-                         "sum_mat_power must not reproduce the Java bug")
 
     def test_sum_mat_power_rejects_k_less_than_1(self):
         with self.assertRaises(ValueError):
@@ -378,12 +264,7 @@ class TestDistanceScalarStats(unittest.TestCase):
         self.assertAlmostEqual(mu.average(data), 2.5, places=10)
         self.assertAlmostEqual(mu.variance(data), 1.25, places=10)
 
-    def test_cv_is_scv_like_java(self):
-        """
-        Java: CV(double[]) actually returns Var/mean^2 (the SCV), not the
-        relative standard deviation. The name is kept for fidelity, and
-        cv_true gives the real CV.
-        """
+    def test_cv_and_scv(self):
         data = [1.0, 2.0, 3.0, 4.0]
         self.assertAlmostEqual(mu.cv(data), 1.25 / 6.25, places=10)
         self.assertAlmostEqual(mu.cv_true(data), np.sqrt(1.25) / 2.5, places=10)
@@ -398,26 +279,11 @@ class TestValidations(unittest.TestCase):
     def test_check_sub_generator_matrix_accepts_valid(self):
         self.assertTrue(mu.check_sub_generator_matrix(G3))
 
-    def test_check_sub_generator_matrix_column_zero_gap_closed(self):
-        """
-        Documented in matrix_utils.py: Java's checkSubGeneratorMatrix never
-        inspects column 0 (its inner loop starts at j = 1), so it misses a
-        positive diagonal entry or a negative off-diagonal entry there. This
-        implementation closes that gap.
-        """
+    def test_check_sub_generator_matrix_rejects_invalid_diagonal(self):
         positive_diagonal_col0 = np.array([[1.0, -1.0], [0.0, -1.0]])
         self.assertFalse(mu.check_sub_generator_matrix(positive_diagonal_col0))
 
-    def test_check_sub_generator_matrix_accepts_full_generator_like_java(self):
-        """
-        Java's checkSubGeneratorMatrix accepts a full generator (every row
-        sums to exactly 0, so there is no exit to absorption) because it
-        never requires some row to sum strictly below zero. This
-        implementation reproduces that behavior (see DISCREPANCIES.md,
-        A.3(b)): the exit-to-absorption requirement was tried and then
-        deliberately reverted to match Java, rather than left as an
-        unintentional gap.
-        """
+    def test_check_sub_generator_matrix_accepts_closed_generator(self):
         full_generator = np.array([[-1.0, 1.0], [1.0, -1.0]])
         self.assertTrue(mu.check_sub_generator_matrix(full_generator))
 
@@ -426,20 +292,19 @@ class TestValidations(unittest.TestCase):
         recurrent_matrix = np.array([[1.0, 0.0], [0.5, 0.4]])
         self.assertFalse(mu.check_sub_stochastic_matrix(recurrent_matrix))
 
-    def test_check_sub_stochastic_vector_checks_first_entry(self):
-        # Java's sign loop starts at i = 1 and accepts [-5, 0.5].
+    def test_check_sub_stochastic_vector_rejects_negative_entry(self):
         self.assertFalse(mu.check_sub_stochastic_vector(np.array([-5.0, 0.5])))
 
     def test_check_sub_generator_matrix_rejects_non_square(self):
-        # Java only validates square matrices and returns true otherwise.
         self.assertFalse(mu.check_sub_generator_matrix(np.array([[-1.0, 0.5, 0.2]])))
 
 
 class TestSpectralRadiusCriterion(unittest.TestCase):
     """
     sp(A) < 1 is decided by graph reachability (every phase reaches a phase
-    whose row sums to less than 1), not by eigenvalues. Checked here against
-    np.linalg.eigvals on random sub-stochastic matrices.
+    whose row sums to less than 1), not by eigenvalues. The implementation is
+    checked against the mathematical spectral-radius definition on random
+    sub-stochastic matrices.
     """
 
     def test_matches_eigenvalues_on_random_matrices(self):

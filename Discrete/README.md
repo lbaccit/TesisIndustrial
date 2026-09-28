@@ -1,21 +1,22 @@
-# Discrete — migración de `jphase` (Java) a Python
+# Discrete — implementación Python de distribuciones Phase-Type
 
-Módulo Python que reimplementa la parte **discreta** de `jphase`
-(`jMarkov/src/jphase/`): `MatrixUtils.java`, `AbstractDiscPhaseVar.java`,
-`DenseDiscPhaseVar.java` y `SparseDiscPhaseVar.java`, junto con su propia
-suite de tests (Java no tiene tests para el caso discreto).
+Módulo Python para distribuciones Phase-Type discretas, con representaciones
+densa y sparse, operaciones de probabilidad, momentos y operaciones de cierre.
+Las matrices de prueba continuas se uniformizan para construir los fixtures
+discretos; los valores esperados de la suite se generan de forma independiente
+con aritmética racional exacta.
 
 ## Archivos
 
-| Archivo | Migración de |
+| Archivo | Función |
 |---|---|
-| `matrix_utils.py` | `MatrixUtils.java` |
-| `AbstractDiscPhaseVar.py` | `AbstractDiscPhaseVar.java` |
-| `DenseDiscPhaseVar.py` | `DenseDiscPhaseVar.java` |
-| `SparseDiscPhaseVar.py` | `SparseDiscPhaseVar.java` |
-| `discrete_fixtures.py` | variables de prueba (uniformización de las matrices de los tests continuos de Java) |
-| `generate_reference_values.py` | genera `reference_values.py` en aritmética racional exacta, sin usar el código bajo prueba |
-| `test_*.py` | ver tabla de correspondencia en `run_tests.py` |
+| matrix_utils.py | utilidades matriciales |
+| AbstractDiscPhaseVar.py | interfaz y operaciones de una DPH |
+| DenseDiscPhaseVar.py | representación densa |
+| SparseDiscPhaseVar.py | representación sparse |
+| discrete_fixtures.py | fixtures discretos obtenidos por uniformización |
+| generate_reference_values.py | referencias independientes en aritmética racional exacta |
+| test_*.py | pruebas de teoría, valores y equivalencia entre representaciones |
 
 ## Cómo correr los tests
 
@@ -24,12 +25,11 @@ python3 run_tests.py          # verbose
 python3 run_tests.py -q       # una línea por archivo
 ```
 
-Requiere `numpy` y `scipy`. 268 tests, todos en verde.
+Requiere `numpy` y `scipy`. La suite contiene actualmente 255 tests.
 
-## Discrepancias entre la teoría/Java y la implementación
+## Discrepancias históricas y decisiones de implementación
 
-Ver [`DISCREPANCIES.md`](DISCREPANCIES.md) — doce discrepancias encontradas
-entre el código Java de jMarkov y la teoría de distribuciones Phase-Type,
-cada una con la fórmula errónea, la fórmula correcta, y la evidencia que
-prueba el error (derivación matemática, contraejemplo numérico reproducible,
-o comparación con el código análogo continuo del mismo repositorio).
+Ver [`DISCREPANCIES.md`](DISCREPANCIES.md) — doce discrepancias identificadas
+durante la revisión histórica del código de referencia y las decisiones
+adoptadas en esta implementación Python. Cada una incluye la fórmula errónea,
+la fórmula correcta y la evidencia correspondiente.

@@ -327,7 +327,7 @@ class AbstractDiscretePhaseType(ABC):
         quantil in Java applies Newton-Raphson using pmf as if it were
         the derivative of cdf, that is, it treats a step function as if it
         were differentiable. After 100 iterations,it does not converge 
-        and returns ``0.0`` instead of reporting a failure. 
+        and returns 0.0 instead of reporting a failure. 
         Example: With a Geometric(0.5) that happens for p = 0.9, 0.95 and 0.99, where the
         correct answers are 4, 5 and 7.
 
@@ -447,8 +447,9 @@ class AbstractDiscretePhaseType(ABC):
         without the factor c. That is only exact when alpha_0 = 0. With
         alpha_0 > 0 it assigns no probability to the chains of zero-length
         copies. Example: X with alpha = [0.5, 0.2] (alpha_0 = 0.3) and p =
-        0.3 differs from the brute-force compound sum by 0.19 in the pmf. The
-        continuous AbstractContPhaseVar.sumGeom uses the same formula, and
+        0.3 differs from the brute-force compound sum by 0.19 in the pmf. 
+        
+        The continuous AbstractContPhaseVar.sumGeom uses the same formula, and
         its reference test (DenseContClosureTest.testSumGeom, with alpha_0
         = 0.5) was computed with that formula too.
         """
@@ -464,17 +465,21 @@ class AbstractDiscretePhaseType(ABC):
         Sum of a Phase-type-distributed number of iid copies of this
         variable.
 
-        Java: ``sumPH(DiscPhaseVar B)``.
+        Java: sumPH(DiscPhaseVar B).
 
-        ``counter`` is itself a DPH variable (beta, S) whose VALUE is the
-        number of copies of ``this`` to add: Y = X_1 + ... + X_N, with the
+        counter is itself a DPH variable (beta, S) whose VALUE is the
+        number of copies of this to add: Y = X_1 + ... + X_N, with the
         X_i iid copies of this variable and N ~ counter. This generalizes
-        ``sum_geom``, which is the special case where ``counter`` is a
+        sum_geom, which is the special case where counter is a
         1-phase geometric count.
 
-        Construction (n1 = self.n_phases, n2 = counter.n_phases; a0 = P(self
-        = 0); a = self's absorption vector ``get_mat0()``; beta, S =
-        counter's vector/matrix):
+        Construction 
+        n1 = self.n_phases, 
+        n2 = counter.n_phases
+        a0 = P(self = 0)
+        a = self's absorption vector get_mat0()
+        beta
+        S = counter's vector/matrix):
 
             M         = (I_n2 - a0*S)^{-1}
             alpha_res = alpha (x) (M^T beta)
@@ -487,34 +492,27 @@ class AbstractDiscretePhaseType(ABC):
         M = sum_{m>=0} (a0 S)^m collects those chains of zero-length copies,
         both at the start (alpha_res) and after each absorption (M S = S M).
 
-        Divergences from Java
+        Changes from Java
         ---------------------
-        1. Java computes ``M`` with
-           ``ISInv.solve(Matrices.identity(this.getNumPhases()), ...)``. It
-           solves against ``I_n1`` even though ``ISInv`` is n2 x n2, so the
+        1. Java computes M with
+           ISInv.solve(Matrices.identity(this.getNumPhases()), ...). It
+           solves against I_n1 even though ISInv is n2 x n2, so the
            call only works when n1 == n2 and raises an exception otherwise.
-           The continuous version, ``AbstractContPhaseVar.sumPH``, uses
-           ``Matrices.identity(n2)``, as it should. That is what is done here.
+           The continuous version, AbstractContPhaseVar.sumPH, uses
+           Matrices.identity(n2), as it should.
         2. Java multiplies the second term by (1 - a0). The formula above
-           has no such factor: Java's would be correct if ``alpha`` were the
+           has no such factor: Java's would be correct if alpha were the
            conditional vector alpha / (1 - a0) (the start of a copy GIVEN that
-           it is not 0), but ``getVector()`` is the unconditional alpha, so
-           the factor counts (1 - a0) twice. With a0 = 0 the two versions
-           coincide. With a0 > 0, Java's version loses probability mass:
-           example, alpha = [0.5, 0.2] (a0 = 0.3) against a 2-phase counter
+           it is not 0), but getVector() is the unconditional alpha, so
+           the factor counts (1 - a0) twice. 
+           With a0 = 0 the two versions coincide. With a0 > 0, 
+           the factor is applied twice, leading to a loss of probability mass.
+           For example, alpha = [0.5, 0.2] (a0 = 0.3) against a 2-phase counter
            differs from the brute-force compound sum by 0.016 in the pmf.
-           The continuous ``sumPH`` has the same factor.
 
         No discrete test exists on the Java side, so neither problem ever
         showed up there.
 
-        Sanity check
-        ------------
-        If ``counter`` is the degenerate DPH equal to 1 with probability 1
-        (n2 = 1, beta = [1], S = [[0]]), summing "1 copy of self" must give
-        back self: S = [[0]] makes M = [[1]] and the second term vanish,
-        leaving alpha_res = alpha and A_res = A (up to the harmless (x) I_1
-        relabeling of the phases).
         """
         n2 = counter.n_phases
         a0 = self.get_vec0()
@@ -532,9 +530,9 @@ class AbstractDiscretePhaseType(ABC):
 
     def mix(self, p: float, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
         """
-        Mixture: with probability p realize ``self``, otherwise ``other``.
+        Mixture: with probability p realize self, otherwise other.
 
-        Java: ``mix(double p, DiscPhaseVar B)``.
+        Java: mix(double p, DiscPhaseVar B).
 
             alpha_res = concat(p*alpha, (1-p)*beta)
             A_res     = block_diag(A, B)
@@ -550,14 +548,13 @@ class AbstractDiscretePhaseType(ABC):
         """
         Minimum of two independent variables: min(self, other).
 
-        Java: ``min(DiscPhaseVar B)``.
+        Java: min(DiscPhaseVar B).
 
             alpha_res = alpha (x) beta
             A_res     = A (x) B
 
         Runs both phase processes in parallel; the combined process absorbs
-        as soon as either one does, which is exactly "the first one to
-        finish".
+        as soon as either one does
         """
         alpha_res = kronecker_vectors(self._alpha, other._alpha)
         A_res = kronecker(self._A, other._A)
@@ -567,28 +564,27 @@ class AbstractDiscretePhaseType(ABC):
         """
         Maximum of two independent variables: max(self, other).
 
-        Java: ``max(DiscPhaseVar B)``.
+        Java: max(DiscPhaseVar B).
 
         Layout of the result (n1*n2 + n1 + n2 phases, n1 = self.n_phases,
         n2 = other.n_phases):
 
           - the first n1*n2 phases track (self, other) running in parallel,
             while both are still active;
-          - the next n1 phases track ``self`` alone, once ``other`` has
+          - the next n1 phases track self alone, once other has
             already absorbed;
-          - the last n2 phases track ``other`` alone, once ``self`` has
+          - the last n2 phases track other alone, once self has
             already absorbed.
 
-        The combined process only absorbs once BOTH have absorbed, which is
-        "the last one to finish".
+        The combined process only absorbs once BOTH have absorbed
 
-        Divergence from Java
+        Changes from Java ** TO BE APPROVED BY JUAN FERNANDO **:
         --------------------
-        Java's discrete ``max`` is a line-for-line copy of
-        ``AbstractContPhaseVar.max``, including the joint "both still
-        running" block, built with ``kroneckerSum(A, B) = A(x)I + I(x)B``,
+        Java's discrete max is a line-for-line copy of
+        AbstractContPhaseVar.max, including the joint "both still
+        running" block, built with kroneckerSum(A, B) = A(x)I + I(x)B,
         and the two boundary-crossing blocks, built with
-        ``kronecker(I_n1, mat0(B))`` / ``kronecker(mat0(A), I_n2)``.
+        kronecker(I_n1, mat0(B)) / kronecker(mat0(A), I_n2).
 
         That is the right construction in CONTINUOUS time: with probability
         one, at most one of the two subprocesses moves at any given instant,
@@ -601,14 +597,13 @@ class AbstractDiscretePhaseType(ABC):
         step advances both subprocesses simultaneously, and both may even
         absorb in the very same step. Reusing the continuous formula
         produces invalid rows (row sums greater than 1) as soon as both
-        variables have a positive chance of continuing - confirmed
-        numerically for two Geometric(0.5)/Geometric(0.7) variables, where
+        variables have a positive chance of continuing
+        confirmed numerically for two Geometric(0.5)/Geometric(0.7) variables, where
         the joint self-loop alone came out to 0.8 while transitions to the
         two boundary blocks added another 0.7 + 0.5, all from the same
-        state. The correct discrete-time construction replaces the
-        Kronecker sum with the Kronecker PRODUCT for the joint block (as
-        Java's own discrete ``min`` already correctly does, unlike ``max``),
-        and replaces each boundary identity with the surviving variable's
+        state. 
+        The correct discrete-time construction replaces the Kronecker sum with the Kronecker 
+        PRODUCT for the joint block and replaces each boundary identity with the surviving variable's
         own sub-stochastic matrix, since it also takes a real transition in
         the step where the other one absorbs:
 
@@ -617,11 +612,11 @@ class AbstractDiscretePhaseType(ABC):
             other-only edge= mat0(self) (x) B          (was mat0(self) (x) I_n2)
 
         With this fix the row sums work out to
-        ``1 - mat0(self)_i * mat0(other)_j`` for every joint row - i.e. the
+        1 - mat0(self)_i * mat0(other)_j for every joint row - i.e. the
         only probability mass missing from a joint row is exactly the
         probability that both variables absorb in that same step, which is
-        precisely when ``max`` itself absorbs. No test exercises this
-        method on the Java side either, so the bug is latent there too.
+        precisely when max itself absorbs. 
+        No test exercises this method on the Java side either, so the bug is latent there too.
         """
         n1, n2 = self.n_phases, other.n_phases
         a1, a2 = self._alpha, other._alpha
@@ -711,7 +706,7 @@ class AbstractDiscretePhaseType(ABC):
 
     @staticmethod
     def _check_index(k, name: str = "k") -> int:
-        """Validate that `k` is a non-negative integer."""
+        """Validate that k is a non-negative integer."""
         if isinstance(k, (bool, np.bool_)):
             raise TypeError(f"'{name}' must be an integer, not a bool.")
         if isinstance(k, (float, np.floating)):

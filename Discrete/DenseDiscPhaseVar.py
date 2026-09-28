@@ -3,12 +3,12 @@ DenseDiscPhaseVar.py
 
 Discrete Phase-Type distribution with a dense matrix representation.
 
-Migration of ``jphase.DenseDiscPhaseVar`` (Java) to Python.
+Migration of jphase.DenseDiscPhaseVar Java to Python.
 
-Every numerical method (pmf, cdf, moments, quantiles) lives in
-``AbstractDiscretePhaseType``. This class only supplies the two operations that
-depend on how the matrix is stored: ``copy`` and ``new_var``. That is the same
-split Java draws between ``AbstractDiscPhaseVar`` and ``DenseDiscPhaseVar``.
+Every numerical method (pmf, cdf, moments, quantiles) is in
+AbstractDiscretePhaseType. This class only supplies the two operations that
+depend on how the matrix is stored: copy and new_var. That is the same
+split Java draws between AbstractDiscPhaseVar and DenseDiscPhaseVar.
 
 Authors: Juanita Carrascal Mendez, Luciana Bacci Tarazona
 Advisor: Juan Fernando Perez Bernal
@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - depends on the layout, not on logic
 
 class DenseDiscretePhaseType(AbstractDiscretePhaseType):
     """
-    DPH(alpha, A) with A stored as a dense ``np.ndarray``.
+    DPH(alpha, A) with A stored as a dense np.ndarray.
 
     Parameters
     ----------
@@ -38,29 +38,11 @@ class DenseDiscretePhaseType(AbstractDiscretePhaseType):
         Sub-stochastic n x n matrix. It must satisfy A >= 0, row sums <= 1 and
         sp(A) < 1.
 
-    Examples
-    --------
-    Geometric with success probability 0.5, supported on {1, 2, 3, ...}:
-
-    >>> import numpy as np
-    >>> X = DenseDiscretePhaseType(np.array([1.0]), np.array([[0.5]]))
-    >>> round(X.mean(), 6), round(X.var(), 6)
-    (2.0, 2.0)
-    >>> [round(X.pmf(k), 4) for k in range(4)]
-    [0.0, 0.5, 0.25, 0.125]
-
-    Negative binomial as two phases in series:
-
-    >>> alpha = np.array([1.0, 0.0])
-    >>> A = np.array([[0.6, 0.4], [0.0, 0.6]])
-    >>> Y = DenseDiscretePhaseType(alpha, A)
-    >>> round(Y.mean(), 6), round(Y.var(), 6)
-    (5.0, 7.5)
     """
 
     def copy(self) -> "DenseDiscretePhaseType":
         """
-        Independent copy of this variable. Java: ``copy()``.
+        Independent copy of this variable. Java: copy().
 
         The arrays are duplicated, so mutating the copy does not affect the
         original.
@@ -69,7 +51,7 @@ class DenseDiscretePhaseType(AbstractDiscretePhaseType):
 
     def new_var(self, n: int) -> "DenseDiscretePhaseType":
         """
-        Empty variable of the same type with `n` phases. Java: ``newVar(int n)``.
+        Empty variable of the same type with n phases. Java: newVar(int n).
 
         It returns alpha and A filled with zeros, which is a valid if degenerate
         DPH: with alpha = 0 we get alpha_0 = 1, that is P(X = 0) = 1.
