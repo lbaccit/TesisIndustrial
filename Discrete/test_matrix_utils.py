@@ -398,18 +398,28 @@ class TestValidations(unittest.TestCase):
     def test_check_sub_generator_matrix_accepts_valid(self):
         self.assertTrue(mu.check_sub_generator_matrix(G3))
 
-    def test_check_sub_generator_matrix_java_gaps_closed(self):
+    def test_check_sub_generator_matrix_column_zero_gap_closed(self):
         """
-        Documented in matrix_utils.py: Java's checkSubGeneratorMatrix (a) never
-        inspects column 0, and (b) accepts a full generator (with no exit to
-        absorption) because it does not require some row to sum strictly below
-        zero. This implementation closes both gaps.
+        Documented in matrix_utils.py: Java's checkSubGeneratorMatrix never
+        inspects column 0 (its inner loop starts at j = 1), so it misses a
+        positive diagonal entry or a negative off-diagonal entry there. This
+        implementation closes that gap.
         """
-        full_generator = np.array([[-1.0, 1.0], [1.0, -1.0]])
-        self.assertFalse(mu.check_sub_generator_matrix(full_generator))
-
         positive_diagonal_col0 = np.array([[1.0, -1.0], [0.0, -1.0]])
         self.assertFalse(mu.check_sub_generator_matrix(positive_diagonal_col0))
+
+    def test_check_sub_generator_matrix_accepts_full_generator_like_java(self):
+        """
+        Java's checkSubGeneratorMatrix accepts a full generator (every row
+        sums to exactly 0, so there is no exit to absorption) because it
+        never requires some row to sum strictly below zero. This
+        implementation reproduces that behavior (see DISCREPANCIES.md,
+        A.3(b)): the exit-to-absorption requirement was tried and then
+        deliberately reverted to match Java, rather than left as an
+        unintentional gap.
+        """
+        full_generator = np.array([[-1.0, 1.0], [1.0, -1.0]])
+        self.assertTrue(mu.check_sub_generator_matrix(full_generator))
 
     def test_check_sub_stochastic_matrix(self):
         self.assertTrue(mu.check_sub_stochastic_matrix(D3))

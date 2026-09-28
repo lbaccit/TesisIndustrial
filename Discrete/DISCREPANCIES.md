@@ -112,11 +112,15 @@ for _ in range(1, k):
 
 ---
 
-### A.3 — `checkSubGeneratorMatrix`: tres huecos de validación
+### A.3 — `checkSubGeneratorMatrix`: tres huecos de validación (dos corregidos, uno revertido a propósito)
 
 - **Ubicación Java:** `MatrixUtils.java:1435-1457`
-- **Ubicación Python (corregido):** `matrix_utils.check_sub_generator_matrix`
+- **Ubicación Python:** `matrix_utils.check_sub_generator_matrix`
 - **Estado:** se usa (validación de matrices generadoras continuas), pero de forma laxa.
+- **Nota:** de los tres huecos que Java tiene, esta implementación corrige
+  (a) y (c). El hueco (b) se corrigió en un primer momento y luego se
+  **revirtió deliberadamente** para que la función reproduzca el
+  comportamiento de Java tal cual — ver la nota al final de esta sección.
 
 **Código Java:**
 ```java
@@ -146,23 +150,42 @@ Tres problemas, cada uno con contraejemplo:
 *Contraejemplo:* `A = [[5, -5], [0, -0.01]]` (columna 0 con signo
 invertido) — Java lo acepta porque el chequeo de signo nunca toca `j=0`, y
 la suma de la fila 0 es `0 ≤ Epsilon`.
+**Estado en Python: corregido** (`check_sub_generator_matrix` revisa la
+diagonal completa, incluyendo el índice 0).
 
 **(b) No exige salida a absorción.** La condición 4 de una matriz
 generadora válida (al menos una fila con suma `< 0`) nunca se verifica.
 *Contraejemplo:* un generador completo (todas las filas suman exactamente
 0, sin ninguna vía de absorción) pasa la validación aunque el vector de
 absorción `a = -A·1` sea idénticamente cero y la variable nunca termine.
+**Estado en Python: NO corregido, a propósito.** `check_sub_generator_matrix`
+devuelve `True` para un generador completo, igual que Java — ver la nota
+más abajo.
 
 **(c) No rechaza matrices no cuadradas.** `res` parte en `true` y el bloque
 de validación solo corre `if (n == m)`; si `n ≠ m`, la función devuelve
 `true` sin haber revisado nada.
 *Contraejemplo:* `A` de 1×3 pasa `checkSubGeneratorMatrix` trivialmente.
+**Estado en Python: corregido** (rechaza matrices no cuadradas).
+
+**Nota sobre (b):** esta implementación corrigió inicialmente los tres
+huecos. Al editar la documentación de la función se eliminó también, por
+error, la línea de código que implementaba la condición 4 (quedó
+`return True` sin condición al final de ambas ramas, densa y dispersa). Al
+notar el problema se decidió **no** restaurar esa condición: se prefirió
+que `check_sub_generator_matrix` reproduzca el comportamiento de Java tal
+cual para este caso, en vez de ser más estricta que el original. El test
+`test_check_sub_generator_matrix_accepts_full_generator_like_java`
+(`test_matrix_utils.py`) verifica y deja constancia de esta decisión.
 
 **Fuente teórica general:** las cuatro condiciones de una matriz
 sub-generadora válida (no-negatividad fuera de diagonal, diagonal negativa,
 filas suman ≤ 0, al menos una fila suma < 0) son estándar en la teoría de
 cadenas de Markov de tiempo continuo con absorción — Neuts (1981);
-Latouche & Ramaswami (1999).
+Latouche & Ramaswami (1999). La condición 4 sigue siendo, por tanto, una
+divergencia real entre la teoría/Java y esta implementación — solo que
+ahora es una divergencia deliberada respecto a la TEORÍA (se optó por fidelidad
+a Java), no un hueco sin corregir por descuido.
 
 ---
 
@@ -517,7 +540,7 @@ copia no nace absorbida), pero no es lo que devuelve.
 |---|---|---|---|
 | A.1 | `kroneckerMxRowVector` | `MatrixUtils.java:187` | sin test de regresión dedicado (código muerto); documentado en el docstring de `kronecker_mx_row_vector` |
 | A.2 | `sumMatPower` | `MatrixUtils.java:1392` | `test_matrix_utils.TestSumMatPower.test_sum_mat_power_java_bug` |
-| A.3 | `checkSubGeneratorMatrix` | `MatrixUtils.java:1435` | `test_matrix_utils.TestValidations` |
+| A.3 | `checkSubGeneratorMatrix` | `MatrixUtils.java:1435` | `test_matrix_utils.TestValidations` (columna 0 y no-cuadrada corregidas; salida a absorción **no** corregida, a propósito - ver nota en A.3) |
 | A.4 | `checkSubStochasticVector` | `MatrixUtils.java:1415` | `test_matrix_utils.TestValidations.test_check_sub_stochastic_vector_checks_first_entry` |
 | A.5 | `CV(double[])` | `MatrixUtils.java:1073` | `test_matrix_utils.TestDistanceScalarStats.test_cv_is_scv_like_java` |
 | B.1 | `cdf(x)` | `AbstractDiscPhaseVar.java:166` | `test_AbstractDiscPhaseVar.TestPmfCdfConsistency` |
