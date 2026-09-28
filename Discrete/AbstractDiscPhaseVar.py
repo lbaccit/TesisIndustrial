@@ -83,10 +83,7 @@ class AbstractDiscretePhaseType(ABC):
     Attributes
     ----------
     n_phases : int
-        Number of transient phases. Java: ``getNumPhases()``, a method there
-        because it recomputes ``getVector().size()`` on every call; here it is
-        computed once in the constructor and stored, since ``coerce_representation``
-        already needs it to validate ``alpha``.
+        Number of transient phases.
 
     """
 
@@ -112,275 +109,35 @@ class AbstractDiscretePhaseType(ABC):
                 "probability 1)." + detail
             )
 
+
+
     @property
     def alpha(self) -> np.ndarray:
-        """
-        Vector of initial probabilities.
-
-        Java: ``getVectorArray()``. There Java needs a separate method
-        because ``Vector`` is not a plain array; here ``alpha`` already IS an
-        ``np.ndarray``, so no conversion method is needed.
-        """
+        """Vector of initial probabilities."""
         return self._alpha.copy()
 
     @property
     def A(self) -> np.ndarray:
-        """
-        Sub-stochastic matrix.
-
-        Java: ``getMatrixArray()``, for the same reason as ``alpha`` above.
-        a_i is the probability of being absorbed in one step from phase i.
-        Java: getMat0().
-        """
+        """Sub-stochastic matrix."""
         return self._A.copy()
-
-    # -------------------------------------------------------------------
-    # sumPH is the first method in AbstractDiscPhaseVar.java; kept here in
-    # the same position even though it calls get_vec0/get_mat0, defined
-    # right below. Method lookup in Python (like in Java) is not sequential,
-    # so the order below has no effect on behavior - it is purely so this
-    # file reads side by side with the Java original.
-    # -------------------------------------------------------------------
-
-    def sum_ph(self, counter: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
-        Java: getVec0().
-        """
-        Sum of a Phase-type-distributed number of iid copies of this
-        variable.
-
-        Java: ``sumPH(DiscPhaseVar B)``.
-
-        ``counter`` is itself a DPH variable (beta, S) whose VALUE is the
-        number of copies of ``this`` to add: Y = X_1 + ... + X_N, with the
-        X_i iid copies of this variable and N ~ counter. This generalizes
-        ``sum_geom``, which is the special case where ``counter`` is a
-        1-phase geometric count.
-
-        Construction (n1 = self.n_phases, n2 = counter.n_phases; a0 = P(self
-        = 0); a = self's absorption vector ``get_mat0()``; beta, S =
-        counter's vector/matrix):
-
-            M         = (I_n2 - a0*S)^{-1}
-            alpha_res = alpha (x) (M^T beta)
-            A_res     = (A (x) I_n2) + (a (x) alpha) (x) (M S)
-
-        The state is (phase of the current copy, phase of the counter). While
-        a copy runs, only its phase moves (A (x) I). When it absorbs (a), the
-        counter takes one step (S). The next copy either starts in a phase
-        (alpha) or is 0 (a0); a 0 copy makes the counter step again at once.
-        M = sum_{m>=0} (a0 S)^m collects those chains of zero-length copies,
-        both at the start (alpha_res) and after each absorption (M S = S M).
-
-        Divergences from Java
-        ---------------------
-        1. Java computes ``M`` with
-           ``ISInv.solve(Matrices.identity(this.getNumPhases()), ...)``. It
-           solves against ``I_n1`` even though ``ISInv`` is n2 x n2, so the
-           call only works when n1 == n2 and raises an exception otherwise.
-           The continuous version, ``AbstractContPhaseVar.sumPH``, uses
-           ``Matrices.identity(n2)``, as it should. That is what is done here.
-        2. Java multiplies the second term by (1 - a0). The formula above
-           has no such factor: Java's would be correct if ``alpha`` were the
-           conditional vector alpha / (1 - a0) (the start of a copy GIVEN that
-           it is not 0), but ``getVector()`` is the unconditional alpha, so
-           the factor counts (1 - a0) twice. With a0 = 0 the two versions
-           coincide. With a0 > 0, Java's version loses probability mass:
-           example, alpha = [0.5, 0.2] (a0 = 0.3) against a 2-phase counter
-           differs from the brute-force compound sum by 0.016 in the pmf.
-           The continuous ``sumPH`` has the same factor.
-
-        No discrete test exists on the Java side, so neither problem ever
-        showed up there.
-
-        Sanity check
-        ------------
-        If ``counter`` is the degenerate DPH equal to 1 with probability 1
-        (n2 = 1, beta = [1], S = [[0]]), summing "1 copy of self" must give
-        back self: S = [[0]] makes M = [[1]] and the second term vanish,
-        leaving alpha_res = alpha and A_res = A (up to the harmless (x) I_1
-        relabeling of the phases).
-        """
-        n2 = counter.n_phases
-        a0 = self.get_vec0()
-        a = self.get_mat0()
-        beta = counter._alpha
-        S = to_dense(counter._A)
-
-        M = np.linalg.inv(np.eye(n2) - a0 * S)
-
-        alpha_res = kronecker_vectors(self._alpha, M.T @ beta)
-        L1 = kronecker(self._A, eye_like(self._A, n2))
-        L2 = kronecker(mult_vector(a, self._alpha), M @ S)
-        A_res = L1 + L2
-        return self._build_result(alpha_res, A_res)
-
-    def get_vec0(self) -> float:
-        """
-        P(X = 0) = alpha_0 = 1 - alpha*1.
-
-        Java: ``getVec0()``.
-        """
-        return vec0(self._alpha)
 
     def get_mat0(self) -> np.ndarray:
         """
         Absorption vector a = 1 - A*1.
 
         a_i is the probability of being absorbed in one step from phase i.
-        Java: ``getMat0()``.
+        Java: getMat0().
         """
         return mat0(self._A, discrete=True)
 
-    # Java also has getMatrixArray()/getVectorArray()/getMat0Array() here,
-    # converting Vector/Matrix to double[]/double[][]. Not needed in Python:
-    # `alpha`, `A` (above) and `get_mat0()` already return np.ndarray.
-
-    def mean(self) -> float:
-        For k = 0 it reduces to alpha_0, consistent with pmf(0).
+    def get_vec0(self) -> float:
         """
-        Expected value E[X].
+        P(X = 0) = alpha_0 = 1 - alpha*1.
 
-        Java: ``expectedValue()``, which is ``return moment(1);`` there.
-        ``moment(1)`` coincides with the raw first moment (factorial and raw
-        moments only differ from k=2 on), so the same delegation is used
-        here.
+        Java: getVec0().
         """
-        return self.moment(1)
+        return vec0(self._alpha)
 
-    def var(self) -> float:
-        """
-        Variance Var(X) = E[X^2] - E[X]^2.
-
-        Java: ``variance()``, computed there as
-        ``moment(2) - moment(1)*moment(1)``. That is wrong in Java: see the
-        note in ``moment`` below - ``moment(2)`` in Java is a FACTORIAL
-        moment, not raw, so Java's formula silently computes
-        E[X(X-1)] - E[X]^2 instead of Var(X), which is off by exactly -E[X]
-        (Var = E[X(X-1)] + E[X] - E[X]^2). That is what is computed here,
-        directly from the factorial moment to avoid the detour through
-        Stirling numbers that ``moment(2)`` would otherwise need:
-
-            Var(X) = E[X(X-1)] + E[X] - E[X]^2
-        """
-        m1 = self.mean()
-        return self.factorial_moment(2) + m1 - m1 * m1
-
-    def std(self) -> float:
-        """Standard deviation. Java: ``stdDeviation()``."""
-        return sqrt(self.var())
-
-    def cv(self) -> float:
-        """
-        Coefficient of variation CV = sd(X) / E[X].
-
-        Java's ``CV()`` computes ``moment(2)/mean^2 - 1``, which (if
-        ``moment(2)`` were the raw second moment) would be the SQUARED
-        coefficient of variation, not the CV - see ``scv`` below, which
-        reproduces that quantity correctly. This method is the true CV,
-        which Java does not have under any name.
-        """
-        return self.std() / self.mean()
-
-    def scv(self) -> float:
-        """
-        Squared coefficient of variation, SCV = Var(X) / E[X]^2.
-
-        Java: ``CV()``, computed there as ``moment(2)/mean^2 - 1``. That is
-        the SCV formula, E[X^2]/mean^2 - 1, but Java's ``moment(2)`` is the
-        factorial moment E[X(X-1)], not the raw E[X^2], so Java's ``CV()``
-        does not actually equal the SCV either. This method computes the SCV
-        correctly, from the (correctly raw) ``var()`` above.
-        """
-        m = self.mean()
-        return self.var() / (m * m)
-
-    def factorial_moment(self, k: int) -> float:
-        """
-        [NEW, no Java method] k-th descending factorial moment.
-
-            E[X(X-1)...(X-k+1)] = k! alpha (I-A)^{-k} A^{k-1} 1
-
-        This is exactly what ``AbstractDiscPhaseVar.moment(k)`` computes in
-        Java - see the note in ``moment`` below for why it is split out into
-        its own method here instead of being called ``moment`` directly.
-        This is the moment that comes out in closed form for a DPH; the raw
-        moments E[X^k] are derived from these (see ``moment``).
-
-        Java: AbstractDiscPhaseVar.moment(k)
-        """
-        if k < 1:
-            raise ValueError(f"k must be >= 1; got {k}.")
-        # A^{k-1} 1, then (I - A)^{-k} applied k times. (I-A)^{-1} and A commute, so the order does not matter.
-        v = mat_power(self._A, k - 1) @ ones_vector(self.n_phases)
-        I_minus_A = eye_like(self._A) - self._A
-        v = solve_power(I_minus_A, k, v)
-        return float(factorial(k) * (self._alpha @ v))
-
-    def moment(self, k: int = 1) -> float:
-        """
-        k-th raw moment E[X^k].
-
-        Java: ``moment(int k)``. It is obtained here from the factorial
-        moments through Stirling numbers of the second kind:
-
-            E[X^k] = sum_{j=1}^{k} S(k, j) E[X(X-1)...(X-j+1)]
-
-        Warning about the comparison against Java
-        -----------------------------------------
-        ``AbstractDiscPhaseVar.moment(k)`` in Java returns the FACTORIAL
-        moment (``factorial_moment(k)`` here), not the raw one, even though
-        ``variance()`` and ``CV()`` there use it as if it were raw. For k = 1
-        they coincide; for k >= 2 they do not. Example with Geometric(0.5) -
-        alpha = [1], A = [[0.5]]:
-        Note **TO BE APPROVED BY JUAN FERNANDO**: 
-        AbstractDiscPhaseVar.moment(k) in Java returns the FACTORIAL moment,
-        not the raw one, even though variance() and CV() there use it as
-        if it were raw. For k = 1 they coincide; for k >= 2 they do not. Example
-        with Geometric(0.5) - alpha = [1], A = [[0.5]]:
-
-            E[X]        = 2      (Java and Python agree)
-            E[X(X-1)]   = 4      (Java moment(2) = our factorial_moment(2))
-            E[X^2]      = 6      (our moment(2))
-            True Var    = 2
-            Java var()  = 4 - 2^2 = 0      <-- incorrect
-
-        """
-        if k < 1:
-            raise ValueError(f"k must be >= 1; got {k}.")
-        fmoments = [self.factorial_moment(j) for j in range(1, k + 1)]
-        return factorial_to_raw(fmoments)
-
-    def cdf(self, k: int) -> float:
-        """
-        Cumulative distribution function.
-
-            F(k) = P(X <= k) = 1 - alpha A^k 1
-
-        Java: ``cdf(double x)``. For k = 0 it reduces to alpha_0, consistent
-        with ``pmf(0)``.
-
-        Divergence from Java
-        --------------------
-        Java computes ``1 - matPower(A, k, alpha, getMat0())``, i.e.
-        ``1 - alpha A^k a`` with ``a`` the absorption vector, instead of
-        ``1 - alpha A^k 1``. ``alpha A^k a`` is, by definition, ``pmf(k+1)``,
-        not the survival function. Example, Geometric(0.5) - alpha=[1],
-        A=[[0.5]]: true F(1) = alpha_0 + pmf(1) = 0.5; Java's formula gives
-        1 - 0.5*0.5 = 0.75. ``survival(x) = 1 - cdf(x)`` inherits the same
-        defect in Java.
-        """
-        k = self._check_index(k)
-        return 1.0 - mat_power(self._A, k, self._alpha, ones_vector(self.n_phases))
-
-    def cdf_range(self, k_max: int) -> np.ndarray:
-        """
-        CDF evaluated at k = 0, 1, ..., k_max (incremental propagation).
-
-        Java: ``cdf(int n, double delta)``, restricted to the unit step
-        (``delta = 1``); Java's version accepts any step size, not ported
-        (nothing else in jphase calls it with ``delta != 1``).
-        """
-        return np.cumsum(self.pmf_range(k_max))
 
     def pmf(self, k: int) -> float:
         """
@@ -388,8 +145,6 @@ class AbstractDiscretePhaseType(ABC):
 
             P(X = 0) = alpha_0
             P(X = k) = alpha A^{k-1} a, k >= 1
-
-        Java: ``pmf(int k)``.
 
         Parameters
         ----------
@@ -405,9 +160,6 @@ class AbstractDiscretePhaseType(ABC):
     def pmf_range(self, k_max: int) -> np.ndarray:
         """
         PMF evaluated at k = 0, 1, ..., k_max.
-
-        Java: ``pmf(int n, int delta)``, restricted to the unit step
-        (``delta = 1``); see the note in ``cdf_range``.
 
         Parameters
         ----------
@@ -429,35 +181,129 @@ class AbstractDiscretePhaseType(ABC):
             v = v @ self._A
         return res
 
-    def prob(self, a: int, b: int) -> float:
-        Note: AbstractDiscPhaseVar.CV() in Java computes moment(2)/m^2 - 1,
-        which is the form of the SCV and with
-        the factorial moment instead of the raw one.
+    def cdf(self, k: int) -> float:
         """
-        P(a < X <= b) = F(b) - F(a). Returns 0.0 if b <= a.
+        Cumulative distribution function.
 
-        Java: ``prob(double a, double b)``.
+            F(k) = P(X <= k) = 1 - alpha A^k 1
+
+        For k = 0 it reduces to alpha_0, consistent with pmf(0).
         """
-        if b <= a:
-            return 0.0
-        return self.cdf(b) - self.cdf(a)
+        k = self._check_index(k)
+        return 1.0 - mat_power(self._A, k, self._alpha, ones_vector(self.n_phases))
+
+    def cdf_range(self, k_max: int) -> np.ndarray:
+        """
+        CDF evaluated at k = 0, 1, ..., k_max (incremental propagation).
+        """
+        return np.cumsum(self.pmf_range(k_max))
 
     def survival(self, k: int) -> float:
         """
         Survival function.
 
             S(k) = P(X > k) = alpha A^k 1
-
-        Java: ``survival(double x)``, computed there as ``1 - cdf(x)`` and so
-        inheriting the ``cdf`` bug documented above; here it is computed
-        directly from the (correct) formula instead of through ``cdf``.
         """
         k = self._check_index(k)
         return mat_power(self._A, k, self._alpha, ones_vector(self.n_phases))
 
-    # Java also has survival(int n, double delta) and the stubs
-    # lossFunction1(x)/lossFunction2(x) (both literally "//TODO return 0" in
-    # Java - nothing to port).
+    def prob(self, a: int, b: int) -> float:
+        """
+        P(a < X <= b) = F(b) - F(a). Returns 0.0 if b <= a.
+        """
+        if b <= a:
+            return 0.0
+        return self.cdf(b) - self.cdf(a)
+
+    # -------------------------------------------------------------------
+    # Moments
+    # -------------------------------------------------------------------
+
+    def factorial_moment(self, k: int) -> float:
+        """
+        k-th descending factorial moment.
+
+            E[X(X-1)...(X-k+1)] = k! alpha (I-A)^{-k} A^{k-1} 1
+
+        This is the moment that comes out in closed form for a DPH; the raw
+        moments E[X^k] are derived from these (see ``moment``).
+
+        Java: AbstractDiscPhaseVar.moment(k)
+        """
+        if k < 1:
+            raise ValueError(f"k must be >= 1; got {k}.")
+        # A^{k-1} 1, then (I - A)^{-k} applied k times. (I-A)^{-1} and A commute, so the order does not matter.
+        v = mat_power(self._A, k - 1) @ ones_vector(self.n_phases)
+        I_minus_A = eye_like(self._A) - self._A
+        v = solve_power(I_minus_A, k, v)
+        return float(factorial(k) * (self._alpha @ v))
+
+    def moment(self, k: int = 1) -> float:
+        """
+        k-th raw moment E[X^k].
+
+        It is obtained from the factorial moments through Stirling numbers of
+        the second kind:
+
+            E[X^k] = sum_{j=1}^{k} S(k, j) E[X(X-1)...(X-j+1)]
+
+        Note **TO BE APPROVED BY JUAN FERNANDO**: 
+        AbstractDiscPhaseVar.moment(k) in Java returns the FACTORIAL moment,
+        not the raw one, even though variance() and CV() there use it as
+        if it were raw. For k = 1 they coincide; for k >= 2 they do not. Example
+        with Geometric(0.5) - alpha = [1], A = [[0.5]]:
+
+            E[X]        = 2      (Java and Python agree)
+            E[X(X-1)]   = 4      (Java moment(2) = our factorial_moment(2))
+            E[X^2]      = 6      (our moment(2))
+            True Var    = 2
+            Java var()  = 4 - 2^2 = 0      <-- incorrect
+
+        """
+        if k < 1:
+            raise ValueError(f"k must be >= 1; got {k}.")
+        fmoments = [self.factorial_moment(j) for j in range(1, k + 1)]
+        return factorial_to_raw(fmoments)
+
+    def mean(self) -> float:
+        """
+        Expected value E[X] = alpha (I-A)^{-1} 1.
+
+        """
+        I_minus_A = eye_like(self._A) - self._A
+        v = solve_power(I_minus_A, 1)
+        return float(self._alpha @ v)
+
+    def var(self) -> float:
+        """
+        Variance Var(X) = E[X^2] - E[X]^2.
+
+        Equivalently, in terms of factorial moments:
+        Var(X) = E[X(X-1)] + E[X] - E[X]^2.
+        """
+        m1 = self.mean()
+        return self.factorial_moment(2) + m1 - m1 * m1
+
+    def std(self) -> float:
+        """Standard deviation."""
+        return sqrt(self.var())
+
+    def cv(self) -> float:
+        """
+        Coefficient of variation CV = sd(X) / E[X].
+        """
+        return self.std() / self.mean()
+
+    def scv(self) -> float:
+        """
+        Squared coefficient of variation, SCV = Var(X) / E[X]^2.
+
+        Note: AbstractDiscPhaseVar.CV() in Java computes moment(2)/m^2 - 1,
+        which is the form of the SCV and with
+        the factorial moment instead of the raw one.
+        """
+        m = self.mean()
+        return self.var() / (m * m)
 
     def quantile(self, p: float, k_max: int = 10 ** 6) -> int:
         """
@@ -510,7 +356,7 @@ class AbstractDiscretePhaseType(ABC):
         return self.quantile(0.5)
 
     # -------------------------------------------------------------------
-    # Closure operations: sum, sum_geom, mix, min, max
+    # Closure operations
     #
     # Each of these builds a new DPH variable representing some operation on
     # independent random variables (a sum, a mixture, a minimum, ...). 
@@ -524,8 +370,6 @@ class AbstractDiscretePhaseType(ABC):
 
     def _build_result(self, alpha, A) -> "AbstractDiscretePhaseType":
         """
-        [NEW, no Java method] Build a variable of the same concrete class as
-        ``self`` from a computed ``(alpha, A)`` pair.
         Build a variable of the same concrete class as self from a
         computed (alpha, A) pair.
 
@@ -614,6 +458,77 @@ class AbstractDiscretePhaseType(ABC):
         c = 1.0 / (1.0 - (1.0 - p) * self.get_vec0())
         A_res = self._A + (1.0 - p) * c * mult_vector(a, self._alpha)
         return self._build_result(c * self._alpha, A_res)
+
+    def sum_ph(self, counter: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
+        """
+        Sum of a Phase-type-distributed number of iid copies of this
+        variable.
+
+        Java: ``sumPH(DiscPhaseVar B)``.
+
+        ``counter`` is itself a DPH variable (beta, S) whose VALUE is the
+        number of copies of ``this`` to add: Y = X_1 + ... + X_N, with the
+        X_i iid copies of this variable and N ~ counter. This generalizes
+        ``sum_geom``, which is the special case where ``counter`` is a
+        1-phase geometric count.
+
+        Construction (n1 = self.n_phases, n2 = counter.n_phases; a0 = P(self
+        = 0); a = self's absorption vector ``get_mat0()``; beta, S =
+        counter's vector/matrix):
+
+            M         = (I_n2 - a0*S)^{-1}
+            alpha_res = alpha (x) (M^T beta)
+            A_res     = (A (x) I_n2) + (a (x) alpha) (x) (M S)
+
+        The state is (phase of the current copy, phase of the counter). While
+        a copy runs, only its phase moves (A (x) I). When it absorbs (a), the
+        counter takes one step (S). The next copy either starts in a phase
+        (alpha) or is 0 (a0); a 0 copy makes the counter step again at once.
+        M = sum_{m>=0} (a0 S)^m collects those chains of zero-length copies,
+        both at the start (alpha_res) and after each absorption (M S = S M).
+
+        Divergences from Java
+        ---------------------
+        1. Java computes ``M`` with
+           ``ISInv.solve(Matrices.identity(this.getNumPhases()), ...)``. It
+           solves against ``I_n1`` even though ``ISInv`` is n2 x n2, so the
+           call only works when n1 == n2 and raises an exception otherwise.
+           The continuous version, ``AbstractContPhaseVar.sumPH``, uses
+           ``Matrices.identity(n2)``, as it should. That is what is done here.
+        2. Java multiplies the second term by (1 - a0). The formula above
+           has no such factor: Java's would be correct if ``alpha`` were the
+           conditional vector alpha / (1 - a0) (the start of a copy GIVEN that
+           it is not 0), but ``getVector()`` is the unconditional alpha, so
+           the factor counts (1 - a0) twice. With a0 = 0 the two versions
+           coincide. With a0 > 0, Java's version loses probability mass:
+           example, alpha = [0.5, 0.2] (a0 = 0.3) against a 2-phase counter
+           differs from the brute-force compound sum by 0.016 in the pmf.
+           The continuous ``sumPH`` has the same factor.
+
+        No discrete test exists on the Java side, so neither problem ever
+        showed up there.
+
+        Sanity check
+        ------------
+        If ``counter`` is the degenerate DPH equal to 1 with probability 1
+        (n2 = 1, beta = [1], S = [[0]]), summing "1 copy of self" must give
+        back self: S = [[0]] makes M = [[1]] and the second term vanish,
+        leaving alpha_res = alpha and A_res = A (up to the harmless (x) I_1
+        relabeling of the phases).
+        """
+        n2 = counter.n_phases
+        a0 = self.get_vec0()
+        a = self.get_mat0()
+        beta = counter._alpha
+        S = to_dense(counter._A)
+
+        M = np.linalg.inv(np.eye(n2) - a0 * S)
+
+        alpha_res = kronecker_vectors(self._alpha, M.T @ beta)
+        L1 = kronecker(self._A, eye_like(self._A, n2))
+        L2 = kronecker(mult_vector(a, self._alpha), M @ S)
+        A_res = L1 + L2
+        return self._build_result(alpha_res, A_res)
 
     def mix(self, p: float, other: "AbstractDiscretePhaseType") -> "AbstractDiscretePhaseType":
         """
@@ -740,16 +655,12 @@ class AbstractDiscretePhaseType(ABC):
     # Representation
     # -------------------------------------------------------------------
 
-    def __str__(self) -> str:
-        """String representation. Java: ``toString()``, which returns ``label()``."""
-        return self.label()
-
     def label(self) -> str:
-        """Short label. Java: ``label()``."""
+        """Short label."""
         return f"DPH - {self.n_phases} phases"
 
     def description(self) -> str:
-        """Full description of the representation and its statistics. Java: ``description()``."""
+        """Full description of the representation and its statistics."""
         return format_representation(
             title="Discrete Phase-Type distribution",
             alpha=self._alpha,
@@ -758,14 +669,8 @@ class AbstractDiscretePhaseType(ABC):
             stats={"Mean": self.mean(), "Variance": self.var(), "CV": self.cv()},
         )
 
-    # -------------------------------------------------------------------
-    # [NEW, no Java methods] __repr__/__eq__/__hash__.
-    #
-    # Java's AbstractDiscPhaseVar does not override Object.equals()/hashCode(),
-    # so equality there is by object identity, not by value. These add value
-    # equality and hashing, which Python programs conventionally expect from
-    # a data-like object; there is no Java behavior being reproduced here.
-    # -------------------------------------------------------------------
+    def __str__(self) -> str:
+        return self.label()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(n_phases={self.n_phases})"
@@ -806,11 +711,7 @@ class AbstractDiscretePhaseType(ABC):
 
     @staticmethod
     def _check_index(k, name: str = "k") -> int:
-        """
-        [NEW, no Java method] Validate that `k` is a non-negative integer.
-
-        Java's ``pmf``/``cdf``/etc. do not validate their argument at all.
-        """
+        """Validate that `k` is a non-negative integer."""
         if isinstance(k, (bool, np.bool_)):
             raise TypeError(f"'{name}' must be an integer, not a bool.")
         if isinstance(k, (float, np.floating)):
