@@ -911,3 +911,4 @@ def format_representation(title: str, alpha, A, matrix_name: str = "A",
             lines.append(f"{key}: {value:.6f}")
     lines.append("_" * width)
     return "\n".join(lines)
+
