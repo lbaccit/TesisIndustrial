@@ -4,46 +4,22 @@ jmarkov/phase/matrix_utils.py
 Matrix utilities for the Phase-Type package, shared by the continuous (ctph)
 and discrete (dtph) cases.
 
-Watch out for the import: there is also a ``jmarkov/matrix_utils.py`` at the
-root of the package (general purpose, it holds ``exp_unif``). They are two
-different modules:
-
-    from jmarkov.matrix_utils import exp_unif          # general purpose
-    from jmarkov.phase.matrix_utils import mat_power   # this one
-
-
-------------------------
-
-What is missing form the Java version
-
-There were uniformization functions in the matrix_utils.java but they are already implemented in jmarkov/matrix_utils.py 
-as exp_unif, together with its private helpers computeLdaMax and resultFromMedian.
-
-The direct matrix exponential was implemented using scipy.linalg.expm (same function as ctpy.py)
-In Python, we do not need to create a function called pow(x, n) because it is already implemented as x ** n. 
 --------------------------------
 
 Dense vs. sparse
 
 So that the functions that process matrices can be used in the dense and sparse cases, 
 we decided to implement a is_sparse, so that the functions can use the appropiate procedure based on the type of the matrix. 
-The functions that take matrices accept both dense ``np.ndarray`` and ``scipy.sparse`` matrices, and dispatch internally. 
+The functions that take matrices accept both dense np.ndarray and scipy.sparse matrices, and dispatch internally. 
 
 ----------------
 Notes:
 
 There were a few functions with the same name, but different purposes. In Python, with NumPy and SciPy, 
 we can unify them into a single function with optional arguments. 
-For example, ``mat_power`` can now handle both the case of computing A^k and the case of computing l * A^k * r, 
-depending on whether the optional vectors are provided.
 
+VECTORS (alpha, the output vector) are always densified.
 
-VECTORS (alpha, the output vector) are always densified. This is a deliberate
-choice: they cost O(n) against the O(n^2) of the matrix, so the saving would be
-marginal while complicating every downstream operation.
-
-What is at stake: a bidiagonal sub-generator with n = 10,000 takes 800 MB dense
-against 0.3 MB in CSR, a factor of 2,857x.
 
 Operation correspondence
 ------------------------
@@ -294,9 +270,9 @@ def mat_power(A, k: int, left_vec=None, right_vec=None):
     """
     Matrix power A^k, optionally pre/post-multiplied by vectors.
 
-    Java: covers both ``matPower`` overloads:
-      - ``matPower(Matrix A, int k)``                        -> A^k
-      - ``matPower(Matrix A, int k, Vector l, Vector r)``    -> l * A^k * r
+    Java: covers both matPower overloads:
+      - matPower(Matrix A, int k)                        -> A^k
+      - matPower(Matrix A, int k, Vector l, Vector r)    -> l * A^k * r
 
     Parameters
     ----------
@@ -357,7 +333,7 @@ def sum_mat_power(A, k: int, left_vec=None, right_vec=None):
     Note:
     It shows up when accumulating the discrete CDF and in the loss functions.
     When sp(A) < 1 and k is large, the limit is (I - A)^{-1}; in those cases it
-    is better to solve the system than to sum (see ``solve_power``).
+    is better to solve the system than to sum (see solve_power).
 
     Changes from Java version
     --------------------
@@ -779,7 +755,7 @@ def check_sub_stochastic_matrix(A, tol: float = EPS) -> bool:
     sp(A) < 1 is equivalent to absorption happening with probability 1 and to
     (I - A)^{-1} = sum_{k>=0} A^k converging.
 
-    The current check in ``dtph.py`` (rows <= 1, at least one < 1) also accepts
+    The current check in dtph.py (rows <= 1, at least one < 1) also accepts
     that counterexample.
     """
     if A.shape[0] != A.shape[1] if is_sparse(A) else (
